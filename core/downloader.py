@@ -190,6 +190,51 @@ class Downloader:
         except Exception:
             pass
 
+    def get_download_url(self, song_id: int, quality: str = DEFAULT_QUALITY) -> dict:
+        """获取歌曲下载链接（不下载文件）
+
+        Args:
+            song_id: 歌曲 ID
+            quality: 音质 (standard/exhigh/lossless/hires)
+
+        Returns:
+            {"code": int, "url": str, "size": int, "error": str}
+        """
+        # 获取歌曲详情
+        detail = self.api.get_song_detail([song_id])
+        if detail.get("code") != 200 or not detail.get("songs"):
+            return {"code": -1, "error": "获取歌曲详情失败"}
+
+        song = detail["songs"][0]
+        song_name = sanitize_filename(song["name"])
+        artist_name = sanitize_filename(song["artist_names"])
+        filename = f"{song_name} - {artist_name}"
+
+        # 获取播放链接
+        br = QUALITY_MAP.get(quality, 320000)
+        url_result = self.api.get_song_url([song_id], br)
+
+        song_url = None
+        ext = "mp3"
+        size = 0
+        if url_result.get("code") == 200 and url_result.get("urls"):
+            song_url = url_result["urls"][0]["url"]
+            ext = url_result["urls"][0].get("type", "mp3")
+            size = url_result["urls"][0].get("size", 0)
+
+        if not song_url:
+            # 尝试直链
+            song_url = self.api.get_song_url_simple(song_id)
+
+        return {
+            "code": 200,
+            "url": song_url,
+            "filename": f"{filename}.{ext}",
+            "size": size,
+            "name": song["name"],
+            "artist": song["artist_names"]
+        }
+
     def get_download_stats(self) -> dict:
         """获取下载目录统计"""
         files = [f for f in os.listdir(self.download_dir)

@@ -246,6 +246,15 @@
                                 </div>
                             </div>
                             <div class="setting-card">
+                                <h3>存储空间限制</h3>
+                                <div class="form-group">
+                                    <label>空间上限（GB）</label>
+                                    <input type="number" id="storageLimit" min="0.1" step="0.1" value="2.0">
+                                    <p class="setting-desc">下载目录的最大存储空间限制。超过此限制将停止缓存下载。</p>
+                                    <p class="setting-desc" id="diskInfo" style="color: #1db954; margin-top: 0.5rem;"></p>
+                                </div>
+                            </div>
+                            <div class="setting-card">
                                 <h3>管理路径</h3>
                                 <div class="form-group">
                                     <label>后台访问路径</label>

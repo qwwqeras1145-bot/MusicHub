@@ -47,7 +47,8 @@ def load_config():
             "cache_downloads": True,
             "auto_cleanup_hours": 24,
             "auto_cleanup_enabled": True,
-            "admin_path": "/aimdrd"
+            "admin_path": "/aimdrd",
+            "storage_limit_gb": 2.0
         },
         "ncm": {
             "cookie": "",
@@ -1023,9 +1024,49 @@ def download_random():
     data = request.get_json() or {}
     count = max(1, min(200, int(data.get("count", 5))))
     quality = data.get("quality", "exhigh")
+    mode = data.get("mode", "cache")  # cache or direct
+    
     songs = api.get_random_hot_songs(count)
     if not songs: return jsonify({"code": -1, "msg": "获取热歌榜失败"})
     playable = [s for s in songs if s.get("playable", True)] or songs
+    
+    # Direct mode: return URLs directly, client downloads from CDN
+    if mode == "direct":
+        urls = []
+        for s in playable:
+            song_id = s["id"]
+            result = downloader.get_download_url(song_id, quality)
+            if result.get("code") == 200 and result.get("url"):
+                urls.append({
+                    "id": song_id,
+                    "name": s["name"],
+                    "artist": s["artist_names"],
+                    "url": result["url"],
+                    "size": result.get("size", 0)
+                })
+        return jsonify({
+            "code": 200,
+            "mode": "direct",
+            "count": len(urls),
+            "songs": urls
+        })
+    
+    # Cache mode: download to server with space checking
+    cfg = load_config()
+    storage_limit = cfg["settings"].get("storage_limit_gb", 2.0)
+    
+    # Check current disk usage
+    try:
+        usage = shutil.disk_usage(DOWNLOAD_DIR)
+        used_gb = usage.used / (1024**3)
+        if used_gb >= storage_limit:
+            return jsonify({
+                "code": -1, 
+                "msg": f"服务器存储空间已达上限 ({used_gb:.2f}/{storage_limit} GB)"
+            })
+    except Exception as e:
+        return jsonify({"code": -1, "msg": f"检查磁盘空间失败: {str(e)}"})
+    
     song_ids = [s["id"] for s in playable]
     task_id = task_counter; task_counter += 1
     download_tasks[task_id] = {
@@ -1033,8 +1074,24 @@ def download_random():
         "success": 0, "failed": 0, "status": "running", "results": [],
         "songs": [{"id": s["id"], "name": s["name"], "artist": s["artist_names"]} for s in playable],
     }
+    
     def _run():
         for sid in song_ids:
+            # Check space before each download
+            try:
+                usage = shutil.disk_usage(DOWNLOAD_DIR)
+                used_gb = usage.used / (1024**3)
+                if used_gb >= storage_limit:
+                    download_tasks[task_id]["results"].append({
+                        "song_id": sid, "success": False,
+                        "error": f"存储空间已达上限 ({used_gb:.2f}/{storage_limit} GB)",
+                    })
+                    download_tasks[task_id]["failed"] += 1
+                    download_tasks[task_id]["completed"] += 1
+                    continue
+            except:
+                pass
+            
             result = downloader.download_song(sid, quality)
             download_tasks[task_id]["completed"] += 1
             if result["success"]:
@@ -1058,6 +1115,7 @@ def download_random():
                 "error": result.get("error", ""),
             })
         download_tasks[task_id]["status"] = "completed"
+    
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"code": 200, "task_id": task_id,
                     "songs": [{"id": s["id"], "name": s["name"], "artist": s["artist_names"]} for s in playable]})
@@ -1072,7 +1130,73 @@ def download_status():
 
 @app.route("/api/download/stats")
 def download_stats():
-    return jsonify({"code": 200, **downloader.get_download_stats()})
+    stats = downloader.get_download_stats()
+    # Add disk space info
+    try:
+        usage = shutil.disk_usage(DOWNLOAD_DIR)
+        stats["disk_total_gb"] = round(usage.total / (1024**3), 2)
+        stats["disk_used_gb"] = round(usage.used / (1024**3), 2)
+        stats["disk_free_gb"] = round(usage.free / (1024**3), 2)
+    except:
+        stats["disk_total_gb"] = 0
+        stats["disk_used_gb"] = 0
+        stats["disk_free_gb"] = 0
+    return jsonify({"code": 200, **stats})
+
+@app.route("/api/admin/system/disk")
+@require_auth
+def admin_disk_info():
+    """Get disk space information"""
+    try:
+        usage = shutil.disk_usage(DOWNLOAD_DIR)
+        return jsonify({
+            "code": 200,
+            "total_gb": round(usage.total / (1024**3), 2),
+            "used_gb": round(usage.used / (1024**3), 2),
+            "free_gb": round(usage.free / (1024**3), 2),
+            "used_percent": round((usage.used / usage.total) * 100, 1) if usage.total > 0 else 0
+        })
+    except Exception as e:
+        return jsonify({"code": -1, "msg": str(e)})
+
+@app.route("/api/admin/settings", methods=["GET"])
+@require_auth
+def admin_get_settings():
+    """Get current settings"""
+    cfg = load_config()
+    return jsonify({"code": 200, "settings": cfg["settings"]})
+
+@app.route("/api/admin/settings", methods=["POST"])
+@require_auth
+def admin_update_settings():
+    """Update settings"""
+    data = request.get_json() or {}
+    cfg = load_config()
+    
+    # Update settings
+    if "cache_downloads" in data:
+        cfg["settings"]["cache_downloads"] = bool(data["cache_downloads"])
+    if "auto_cleanup_hours" in data:
+        hours = int(data["auto_cleanup_hours"])
+        if hours > 0:
+            cfg["settings"]["auto_cleanup_hours"] = hours
+    if "auto_cleanup_enabled" in data:
+        cfg["settings"]["auto_cleanup_enabled"] = bool(data["auto_cleanup_enabled"])
+    if "storage_limit_gb" in data:
+        limit_gb = float(data["storage_limit_gb"])
+        if limit_gb > 0:
+            # Check if limit exceeds available disk space
+            try:
+                usage = shutil.disk_usage(DOWNLOAD_DIR)
+                max_allowed = round(usage.total / (1024**3), 2)
+                if limit_gb > max_allowed:
+                    return jsonify({"code": -1, "msg": f"空间限制不能超过磁盘总容量 {max_allowed} GB"})
+            except:
+                pass
+            cfg["settings"]["storage_limit_gb"] = limit_gb
+    
+    save_config(cfg)
+    return jsonify({"code": 200, "msg": "设置已更新", "settings": cfg["settings"]})
 
 # ==================== Startup ====================
 def run_server(host=HOST, port=PORT, debug=False):

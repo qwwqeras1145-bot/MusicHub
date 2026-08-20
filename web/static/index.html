@@ -100,6 +100,15 @@
                             <button data-count="100">100首</button>
                         </div>
                     </div>
+                    <div class="form-row"><label>下载方式</label>
+                        <select id="batchMode">
+                            <option value="direct" selected>直接下载到设备</option>
+                            <option value="cache">服务器缓存下载</option>
+                        </select>
+                    </div>
+                    <p class="form-hint" id="batchModeHint" style="margin: -8px 0 8px 0; padding-left: 80px; font-size: 12px; color: #999;">
+                        歌曲直接从网易云下载到您的设备，不占用服务器空间
+                    </p>
                     <button id="startBatchDownload" class="btn-primary btn-large">开始随机下载</button>
                 </div>
                 <div id="batchProgress" class="batch-progress hidden">

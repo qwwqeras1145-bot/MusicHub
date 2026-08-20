@@ -1,5 +1,7 @@
 // MusicHub Admin JavaScript
 
+const API = '';
+
 class MusicHubAdmin {
     constructor() {
         this.currentTab = 'dashboard';
@@ -747,13 +749,24 @@ class MusicHubAdmin {
 
     async loadSettingsData() {
         try {
-            const response = await fetch('/api/admin/settings');
-            const data = await response.json();
+            // Load settings
+            const settingsResponse = await fetch('/api/admin/settings');
+            const settingsData = await settingsResponse.json();
             
-            if (data.code === 200) {
-                document.getElementById('cacheMode').value = data.settings.cache_mode || 'server';
-                document.getElementById('cleanupHours').value = data.settings.cleanup_hours || 24;
-                document.getElementById('adminPath').value = data.settings.admin_path || '/admin';
+            if (settingsData.code === 200) {
+                document.getElementById('cacheMode').value = settingsData.settings.cache_downloads ? 'server' : 'direct';
+                document.getElementById('cleanupHours').value = settingsData.settings.auto_cleanup_hours || 24;
+                document.getElementById('adminPath').value = settingsData.settings.admin_path || '/admin';
+                document.getElementById('storageLimit').value = settingsData.settings.storage_limit_gb || 2.0;
+            }
+            
+            // Load disk info
+            const diskResponse = await fetch('/api/admin/system/disk');
+            const diskData = await diskResponse.json();
+            
+            if (diskData.code === 200) {
+                const diskInfoEl = document.getElementById('diskInfo');
+                diskInfoEl.textContent = `磁盘总容量: ${diskData.total_gb} GB | 已用: ${diskData.used_gb} GB (${diskData.used_percent}%) | 可用: ${diskData.free_gb} GB`;
             }
         } catch (error) {
             console.error('Failed to load settings:', error);
@@ -761,14 +774,23 @@ class MusicHubAdmin {
     }
 
     async saveSettings() {
+        const storageLimit = parseFloat(document.getElementById('storageLimit').value) || 2.0;
+        
+        // Validate storage limit
+        if (storageLimit < 0.1) {
+            this.showToast('存储空间限制不能小于 0.1 GB', 'error');
+            return;
+        }
+        
         const settings = {
-            cache_mode: document.getElementById('cacheMode').value,
-            cleanup_hours: parseInt(document.getElementById('cleanupHours').value) || 24,
-            admin_path: document.getElementById('adminPath').value.trim() || '/admin'
+            cache_downloads: document.getElementById('cacheMode').value === 'server',
+            auto_cleanup_hours: parseInt(document.getElementById('cleanupHours').value) || 24,
+            admin_path: document.getElementById('adminPath').value.trim() || '/admin',
+            storage_limit_gb: storageLimit
         };
         
         try {
-            const response = await fetch('/api/admin/settings/update', {
+            const response = await fetch('/api/admin/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(settings)

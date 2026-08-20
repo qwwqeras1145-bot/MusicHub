@@ -159,9 +159,21 @@
 
     // ==================== Batch Download ====================
     const batchCount = $('batchCount');
+    const batchMode = $('batchMode');
+    const batchModeHint = $('batchModeHint');
+    
     $('countMinus').addEventListener('click', () => { batchCount.value = Math.max(1, parseInt(batchCount.value)-1); });
     $('countPlus').addEventListener('click', () => { batchCount.value = Math.min(200, parseInt(batchCount.value)+1); });
     document.querySelectorAll('.quick-counts button').forEach(btn => { btn.addEventListener('click', () => { batchCount.value = btn.dataset.count; }); });
+    
+    // Update hint text when mode changes
+    batchMode.addEventListener('change', () => {
+        if (batchMode.value === 'direct') {
+            batchModeHint.textContent = '歌曲直接从网易云下载到您的设备，不占用服务器空间';
+        } else {
+            batchModeHint.textContent = '歌曲先下载到服务器缓存，再从服务器下载到您的设备（受空间限制）';
+        }
+    });
 
     const startBatchBtn = $('startBatchDownload');
     const batchProgress = $('batchProgress');
@@ -169,21 +181,85 @@
     startBatchBtn.addEventListener('click', async () => {
         const count = parseInt(batchCount.value) || 5;
         const quality = $('batchQuality').value;
+        const mode = batchMode.value; // 'direct' or 'cache'
+        
         startBatchBtn.disabled = true; startBatchBtn.textContent = '获取歌曲...';
         batchProgress.classList.remove('hidden');
         $('progressLog').innerHTML = '';
         $('progressFill').style.width = '0%';
         $('progressText').textContent = '获取中...';
         $('progressCount').textContent = '0/'+count;
+        
         try {
-            const r = await fetch(`${API}/api/download/random`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({count,quality}) });
+            const r = await fetch(`${API}/api/download/random`, { 
+                method:'POST', 
+                headers:{'Content-Type':'application/json'}, 
+                body: JSON.stringify({count, quality, mode}) 
+            });
             const d = await r.json();
-            if (d.code !== 200) { $('progressText').textContent = '失败: '+(d.msg||''); startBatchBtn.disabled=false; startBatchBtn.textContent='开始随机下载'; return; }
-            const songs = d.songs||[];
-            $('progressLog').innerHTML = songs.map(s=>`<div class="log-item">🎵 ${escapeHtml(s.name)} - ${escapeHtml(s.artist)}</div>`).join('');
-            $('progressText').textContent = '下载中...';
-            pollProgress(d.task_id, count);
-        } catch (err) { $('progressText').textContent='失败: '+err.message; startBatchBtn.disabled=false; startBatchBtn.textContent='开始随机下载'; }
+            
+            if (d.code !== 200) { 
+                $('progressText').textContent = '失败: '+(d.msg||''); 
+                startBatchBtn.disabled=false; 
+                startBatchBtn.textContent='开始随机下载'; 
+                return; 
+            }
+            
+            // Check if direct mode
+            if (d.mode === 'direct') {
+                // Direct mode: download files one by one from CDN
+                const songs = d.songs || [];
+                $('progressLog').innerHTML = songs.map(s=>`<div class="log-item">🎵 ${escapeHtml(s.name)} - ${escapeHtml(s.artist)}</div>`).join('');
+                $('progressText').textContent = '下载中...';
+                
+                // Download each song directly
+                for (let i = 0; i < songs.length; i++) {
+                    const song = songs[i];
+                    try {
+                        $('progressCount').textContent = `${i+1}/${songs.length}`;
+                        $('progressFill').style.width = Math.round((i+1)/songs.length*100)+'%';
+                        
+                        // Trigger download
+                        const a = document.createElement('a');
+                        a.href = song.url;
+                        a.download = `${song.name} - ${song.artist}.mp3`;
+                        a.target = '_blank';
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        
+                        // Add success log
+                        const div = document.createElement('div');
+                        div.innerHTML = `<div class="log-item log-success" data-sid="${song.id}">✅ ${escapeHtml(song.name)}</div>`;
+                        $('progressLog').appendChild(div.firstElementChild);
+                        $('progressLog').scrollTop = $('progressLog').scrollHeight;
+                        
+                        // Small delay between downloads to avoid browser blocking
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                    } catch (err) {
+                        const div = document.createElement('div');
+                        div.innerHTML = `<div class="log-item log-error" data-sid="${song.id}">❌ ${escapeHtml(song.name)}: ${err.message}</div>`;
+                        $('progressLog').appendChild(div.firstElementChild);
+                        $('progressLog').scrollTop = $('progressLog').scrollHeight;
+                    }
+                }
+                
+                $('progressText').textContent = `完成！成功下载 ${songs.length} 首`;
+                startBatchBtn.disabled = false; 
+                startBatchBtn.textContent = '开始随机下载';
+                showToast(`批量下载完成：${songs.length} 首`, 'success');
+            } else {
+                // Cache mode: poll for progress
+                const songs = d.songs||[];
+                $('progressLog').innerHTML = songs.map(s=>`<div class="log-item">🎵 ${escapeHtml(s.name)} - ${escapeHtml(s.artist)}</div>`).join('');
+                $('progressText').textContent = '下载中...';
+                pollProgress(d.task_id, count);
+            }
+        } catch (err) { 
+            $('progressText').textContent='失败: '+err.message; 
+            startBatchBtn.disabled=false; 
+            startBatchBtn.textContent='开始随机下载'; 
+        }
     });
 
     function pollProgress(taskId, total) {
