@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-linux:
     runs-on: ubuntu-latest
@@ -43,13 +46,13 @@ jobs:
           name: musichub-linux
           path: dist/musichub-linux
 
-      - name: Upload to release
+      - name: Create Release and Upload
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: ncipollo/release-action@v1
         with:
-          files: dist/musichub-linux
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          artifacts: dist/musichub-linux
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   build-windows:
     runs-on: windows-latest
@@ -84,16 +87,16 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MusicHub.exe
+          name: MusicHub-exe
           path: dist/MusicHub.exe
 
-      - name: Upload to release
+      - name: Create Release and Upload
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: ncipollo/release-action@v1
         with:
-          files: dist/MusicHub.exe
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          artifacts: dist/MusicHub.exe
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   build-android:
     runs-on: ubuntu-latest
@@ -109,25 +112,35 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install Android build tools
+        run: sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
       - name: Build Android APK
         working-directory: ./android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK artifact
+      - name: Rename APK
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk MusicHub.apk
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MusicHub.apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: MusicHub-apk
+          path: MusicHub.apk
 
-      - name: Upload to release
+      - name: Create Release and Upload
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: ncipollo/release-action@v1
         with:
-          files: android/app/build/outputs/apk/debug/app-debug.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          artifacts: MusicHub.apk
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   build-source:
     runs-on: ubuntu-latest
@@ -136,6 +149,7 @@ jobs:
 
       - name: Create source package
         run: |
+          cd ${{ github.workspace }}
           tar czf MusicHub-source.tar.gz \
             --exclude='.git' \
             --exclude='.github' \
@@ -144,12 +158,13 @@ jobs:
             --exclude='__pycache__' \
             --exclude='*.pyc' \
             --exclude='venv' \
+            --exclude='*.spec' \
             .
 
-      - name: Upload to release
+      - name: Create Release and Upload
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: ncipollo/release-action@v1
         with:
-          files: MusicHub-source.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          artifacts: MusicHub-source.tar.gz
+          allowUpdates: true
+          token: ${{ secrets.GITHUB_TOKEN }}
