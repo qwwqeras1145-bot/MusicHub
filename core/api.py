@@ -49,14 +49,7 @@ class NetEaseAPI:
 
     def search(self, keyword: str, limit: int = 30, offset: int = 0,
                search_type: int = 1) -> dict:
-        """搜索歌曲
-
-        Args:
-            keyword: 搜索关键词
-            limit: 返回数量
-            offset: 偏移量
-            search_type: 1=单曲, 10=专辑, 100=歌手, 1000=歌单
-        """
+        """搜索歌曲"""
         # 优先使用 cloudsearch 接口
         url = f"{NETEASE_API_BASE}/weapi/cloudsearch/get/web"
         data = {
@@ -69,9 +62,10 @@ class NetEaseAPI:
         result = self._request("POST", url, data)
         if result.get("code") == 200 and "result" in result:
             songs = result["result"].get("songs", [])
+            privileges = {p["id"]: p for p in result["result"].get("privileges", [])}
             return {
                 "code": 200,
-                "songs": self._format_songs(songs),
+                "songs": self._format_songs(songs, privileges),
                 "total": result["result"].get("songCount", 0),
             }
 
@@ -127,21 +121,17 @@ class NetEaseAPI:
         data = {"c": str(c), "ids": str(song_ids)}
         result = self._request("POST", url, data)
         if result.get("code") == 200:
+            privileges = {p["id"]: p for p in result.get("privileges", [])}
             return {
                 "code": 200,
-                "songs": self._format_songs(result.get("songs", [])),
+                "songs": self._format_songs(result.get("songs", []), privileges),
             }
         return result
 
     # ==================== 播放链接 ====================
 
     def get_song_url(self, song_ids: list, quality: int = 320000) -> dict:
-        """获取歌曲播放/下载链接
-
-        Args:
-            song_ids: 歌曲 ID 列表
-            quality: 音质 (128000/320000/999000/1999000)
-        """
+        """获取歌曲播放/下载链接"""
         url = f"{NETEASE_API_BASE}/weapi/song/enhance/player/url/v1"
         data = {
             "ids": song_ids,
@@ -166,6 +156,27 @@ class NetEaseAPI:
     def get_song_url_simple(self, song_id: int) -> str:
         """获取歌曲直链 (标准音质)"""
         return f"{NETEASE_API_BASE}/song/media/outer/url?id={song_id}.mp3"
+
+    def check_song_url(self, song_id: int) -> dict:
+        """检查歌曲是否可播放/下载
+
+        Returns:
+            {"available": bool, "url": str, "reason": str}
+        """
+        url_result = self.get_song_url([song_id], 320000)
+        if url_result.get("code") == 200 and url_result.get("urls"):
+            url_info = url_result["urls"][0]
+            if url_info.get("url"):
+                return {"available": True, "url": url_info["url"], "reason": ""}
+
+        # 尝试标准音质
+        url_result2 = self.get_song_url([song_id], 128000)
+        if url_result2.get("code") == 200 and url_result2.get("urls"):
+            url_info = url_result2["urls"][0]
+            if url_info.get("url"):
+                return {"available": True, "url": url_info["url"], "reason": "仅标准音质"}
+
+        return {"available": False, "url": "", "reason": "该歌曲受版权保护或需要 VIP 会员"}
 
     # ==================== 歌词 ====================
 
@@ -202,26 +213,24 @@ class NetEaseAPI:
         result = self._request("POST", url, data)
         if result.get("code") == 200:
             tracks = result.get("playlist", {}).get("tracks", [])
+            privileges = {p["id"]: p for p in result.get("privileges", [])}
             return {
                 "code": 200,
                 "name": result.get("playlist", {}).get("name", ""),
-                "songs": self._format_songs(tracks[:100]),
+                "songs": self._format_songs(tracks[:100], privileges),
             }
         return result
 
     def get_hot_songs(self, count: int = 50) -> dict:
         """获取热歌榜歌曲"""
-        # 热歌榜 ID: 3778678
         return self.get_toplist_detail(3778678)
 
     def get_new_songs(self) -> dict:
         """获取新歌榜"""
-        # 新歌榜 ID: 3779629
         return self.get_toplist_detail(3779629)
 
     def get_original_list(self) -> dict:
         """获取原创榜"""
-        # 原创榜 ID: 2884035
         return self.get_toplist_detail(2884035)
 
     # ==================== 歌单 ====================
@@ -303,14 +312,42 @@ class NetEaseAPI:
 
     # ==================== 辅助方法 ====================
 
-    def _format_songs(self, songs: list) -> list:
+    def _format_songs(self, songs: list, privileges: dict = None) -> list:
         """格式化歌曲数据"""
+        if privileges is None:
+            privileges = {}
         formatted = []
         for song in songs:
             artists = song.get("ar", song.get("artists", []))
             album = song.get("al", song.get("album", {}))
+            song_id = song.get("id")
+
+            # 从 privilege 中获取可用性信息
+            priv = privileges.get(song_id, {})
+            fee = priv.get("fee", song.get("fee", 0))
+            # fee: 0=免费 1=VIP 4=购买 8=低价VIP
+            # st: -200=下架 0=正常
+            st = priv.get("st", song.get("st", 0))
+            playable = st >= 0 and fee in (0, 8)
+            # cp: 版权状态, 0=无版权
+            cp = priv.get("cp", song.get("cp", 1))
+            if cp == 0:
+                playable = False
+
+            # 判断不可用原因
+            unavailable_reason = ""
+            if not playable:
+                if cp == 0:
+                    unavailable_reason = "无版权"
+                elif fee in (1, 4):
+                    unavailable_reason = "VIP 专享"
+                elif st == -200:
+                    unavailable_reason = "已下架"
+                else:
+                    unavailable_reason = "不可用"
+
             formatted.append({
-                "id": song.get("id"),
+                "id": song_id,
                 "name": song.get("name", ""),
                 "artists": [{"id": a.get("id"), "name": a.get("name", "")}
                             for a in artists],
@@ -321,9 +358,9 @@ class NetEaseAPI:
                     "pic": album.get("picUrl", ""),
                 },
                 "duration": song.get("dt", song.get("duration", 0)),
-                "fee": song.get("fee", 0),  # 0=免费 1=VIP 8=低价 4=购买
-                "privilege": song.get("privilege", {}).get("fl", 0)
-                if isinstance(song.get("privilege"), dict) else 0,
+                "fee": fee,
+                "playable": playable,
+                "unavailable_reason": unavailable_reason,
             })
         return formatted
 
@@ -332,7 +369,10 @@ class NetEaseAPI:
         result = self.get_hot_songs()
         if result.get("code") == 200:
             songs = result.get("songs", [])
-            if len(songs) > count:
-                return random.sample(songs, count)
-            return songs
+            # 优先选取可播放的歌曲
+            playable = [s for s in songs if s.get("playable", True)]
+            source = playable if len(playable) >= count else songs
+            if len(source) > count:
+                return random.sample(source, count)
+            return source
         return []
