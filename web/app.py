@@ -686,7 +686,25 @@ def ncm_phone_login():
             "username": cfg["ncm"]["username"],
             "vip": cfg["ncm"]["vip"],
         })
-    return jsonify({"code": result.get("code", -1), "msg": result.get("msg", "登录失败")})
+    # Login failed - log the full response for debugging
+    import sys
+    print(f"[NCM Phone Login] Failed. Full API response: {json.dumps(result, ensure_ascii=False)}", file=sys.stderr)
+    
+    # Try to get meaningful error message
+    error_code = result.get("code", -1)
+    error_msg = result.get("msg") or result.get("message") or "登录失败"
+    
+    # Common error codes
+    if error_code == 503:
+        error_msg = "验证码错误，请重新获取"
+    elif error_code == 502:
+        error_msg = "账号或密码错误"
+    elif error_code == 509:
+        error_msg = "你可能操作过于频繁，请稍后再试"
+    elif error_code == 501:
+        error_msg = "用户不存在"
+    
+    return jsonify({"code": error_code, "msg": f"登录失败: {error_msg}"})
 
 
 @app.route("/api/admin/ncm/sms/send", methods=["POST"])
