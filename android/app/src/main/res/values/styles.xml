@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.MusicHub" parent="Theme.MaterialComponents.DayNight">
+        <item name="colorPrimary">#1db954</item>
+        <item name="colorPrimaryVariant">#1ed760</item>
+        <item name="colorOnPrimary">#000000</item>
+        <item name="colorSecondary">#4ecdc4</item>
+        <item name="colorSecondaryVariant">#4ecdc4</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="android:statusBarColor">#0f0f0f</item>
+        <item name="android:windowBackground">#0f0f0f</item>
+        <item name="android:navigationBarColor">#0f0f0f</item>
+    </style>
+</resources>
