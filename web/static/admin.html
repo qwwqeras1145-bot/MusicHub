@@ -75,24 +75,32 @@
                     <div class="admin-grid" style="margin-top:16px">
                         <div class="admin-card">
                             <h3>Cookie 登录</h3>
-                            <div class="form-group"><input type="text" id="ncmCookieInput" placeholder="粘贴 MUSIC_U 值" class="admin-input"></div>
-                            <button id="ncmCookieBtn" class="btn-primary">登录</button>
+                            <div class="form-group"><input type="text" id="ncmCookieInput" placeholder="粘贴完整 Cookie 或 MUSIC_U 值" class="admin-input" style="font-size:12px"></div>
+                            <button id="ncmCookieBtn" class="btn-primary">验证并登录</button>
                             <div class="cookie-help">
                                 <p><strong>获取 Cookie 步骤：</strong></p>
                                 <ol>
                                     <li>浏览器打开 <a href="https://music.163.com" target="_blank">music.163.com</a> 并登录</li>
                                     <li>按 F12 打开开发者工具</li>
-                                    <li>切换到 <strong>Application</strong> 标签</li>
+                                    <li>切换到 <strong>Application</strong>（应用）标签</li>
                                     <li>左侧 Cookies → music.163.com</li>
-                                    <li>找到 <strong>MUSIC_U</strong> 复制值</li>
+                                    <li>复制 <strong>MUSIC_U</strong> 的值</li>
+                                    <li>（可选）也复制 <strong>__csrf</strong> 的值</li>
                                 </ol>
+                                <p><strong>支持的格式：</strong></p>
+                                <ul>
+                                    <li>仅 MUSIC_U 值：<code>00B2471D143...</code></li>
+                                    <li>带键值：<code>MUSIC_U=00B2471D...</code></li>
+                                    <li>完整 Cookie：<code>MUSIC_U=xxx; __csrf=yyy; ...</code></li>
+                                </ul>
                             </div>
                         </div>
                         <div class="admin-card">
                             <h3>手机号登录</h3>
-                            <div class="form-group"><input type="tel" id="ncmPhone" placeholder="手机号" class="admin-input"></div>
-                            <div class="form-group"><input type="password" id="ncmPwd" placeholder="密码" class="admin-input"></div>
+                            <div class="form-group"><input type="tel" id="ncmPhone" placeholder="网易云绑定手机号" class="admin-input"></div>
+                            <div class="form-group"><input type="password" id="ncmPwd" placeholder="网易云密码" class="admin-input"></div>
                             <button id="ncmPhoneBtn" class="btn-primary">登录</button>
+                            <p class="login-hint" style="margin-top:8px;font-size:12px;color:var(--text-muted)">使用网易云音乐 App 的登录账号</p>
                         </div>
                     </div>
                     <div class="admin-card full-width" style="margin-top:16px">
@@ -101,7 +109,7 @@
                             <div id="qrContainer" class="qr-container">
                                 <button id="qrGenBtn" class="btn-secondary">生成二维码</button>
                             </div>
-                            <p id="qrStatusText" class="qr-hint">点击生成二维码，用网易云 App 扫码</p>
+                            <p id="qrStatusText" class="qr-hint">点击生成二维码，用网易云音乐 App 扫码登录</p>
                         </div>
                     </div>
                 </div>

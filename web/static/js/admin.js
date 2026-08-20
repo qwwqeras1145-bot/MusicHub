@@ -104,16 +104,54 @@
             const r = await fetch(`${API}/api/admin/ncm/status`);
             const d = await r.json();
             if (d.logged_in) {
-                $('ncmCurrentStatus').innerHTML = `<div style="display:flex;align-items:center;gap:12px">
-                    <span style="color:var(--accent);font-size:18px">●</span>
-                    <div><strong>已登录</strong><br><span style="color:var(--text-secondary)">${escapeHtml(d.username)} (${d.login_method})</span></div>
-                    <button id="ncmLogoutBtn" class="btn-danger" style="margin-left:auto">退出</button></div>`;
+                const statusColor = d.cookie_expired ? 'var(--danger)' : 'var(--accent)';
+                const statusText = d.cookie_expired ? 'Cookie 已过期' : 'Cookie 有效';
+                const vipBadge = d.vip ? '<span style="background:var(--warning);color:#000;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:8px">VIP</span>' : '';
+                const avatarHtml = d.avatar ? `<img src="${escapeHtml(d.avatar)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover">` : '';
+
+                $('ncmCurrentStatus').innerHTML = `
+                    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+                        ${avatarHtml}
+                        <div style="flex:1;min-width:200px">
+                            <div style="display:flex;align-items:center;gap:8px">
+                                <span style="color:${statusColor};font-size:16px">●</span>
+                                <strong>${escapeHtml(d.username)}</strong>
+                                ${vipBadge}
+                            </div>
+                            <div style="color:var(--text-muted);font-size:12px;margin-top:4px">
+                                <span style="color:${statusColor}">${statusText}</span>
+                                · 登录方式: ${escapeHtml(d.login_method || '未知')}
+                                ${d.captured_at ? ` · 获取于: ${d.captured_at}` : ''}
+                                ${d.last_check ? ` · 最后检测: ${d.last_check}` : ''}
+                            </div>
+                            ${d.masked_cookie ? `<div style="color:var(--text-muted);font-size:11px;font-family:monospace;margin-top:2px">${escapeHtml(d.masked_cookie)}</div>` : ''}
+                        </div>
+                        <div style="display:flex;gap:8px">
+                            <button id="ncmValidateBtn" class="btn-secondary" style="font-size:12px;padding:6px 12px">验证 Cookie</button>
+                            <button id="ncmLogoutBtn" class="btn-danger" style="font-size:12px;padding:6px 12px">退出</button>
+                        </div>
+                    </div>`;
+
                 $('ncmLogoutBtn').addEventListener('click', async () => {
                     await fetch(`${API}/api/admin/ncm/logout`, {method:'POST'});
                     loadNcmStatus(); showToast('已退出网易云', 'success');
                 });
+                $('ncmValidateBtn').addEventListener('click', async () => {
+                    $('ncmValidateBtn').disabled = true;
+                    $('ncmValidateBtn').textContent = '验证中...';
+                    const r = await fetch(`${API}/api/admin/ncm/validate`, {method:'POST'});
+                    const d = await r.json();
+                    showToast(d.msg, d.code===200?'success':'error');
+                    loadNcmStatus();
+                });
             } else {
-                $('ncmCurrentStatus').innerHTML = '<div style="color:var(--text-muted)">未登录网易云音乐，登录后解锁 VIP 歌曲和高音质</div>';
+                const expiredHint = d.cookie_expired ? '<div style="color:var(--danger);font-size:12px;margin-top:4px">上次使用的 Cookie 已过期，请重新登录</div>' : '';
+                $('ncmCurrentStatus').innerHTML = `
+                    <div style="color:var(--text-muted)">
+                        <span style="font-size:16px;color:var(--text-muted)">●</span>
+                        未登录网易云音乐，登录后解锁 VIP 歌曲和高音质下载
+                        ${expiredHint}
+                    </div>`;
             }
         } catch {}
     }
@@ -121,24 +159,37 @@
     $('ncmCookieBtn').addEventListener('click', async () => {
         const cookie = $('ncmCookieInput').value.trim();
         if (!cookie) { showToast('请输入 Cookie', 'error'); return; }
+        $('ncmCookieBtn').disabled = true;
+        $('ncmCookieBtn').textContent = '验证中...';
         const r = await fetch(`${API}/api/admin/ncm/cookie`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cookie})});
-        const d = await r.json(); showToast(d.msg, d.code===200?'success':'error');
-        if (d.code===200) loadNcmStatus();
+        const d = await r.json();
+        showToast(d.msg, d.code===200?'success':'error');
+        if (d.code===200) { $('ncmCookieInput').value = ''; loadNcmStatus(); }
+        $('ncmCookieBtn').disabled = false;
+        $('ncmCookieBtn').textContent = '验证并登录';
     });
 
     $('ncmPhoneBtn').addEventListener('click', async () => {
         const phone = $('ncmPhone').value.trim(), password = $('ncmPwd').value;
         if (!phone) { showToast('请输入手机号', 'error'); return; }
+        if (!password) { showToast('请输入密码', 'error'); return; }
+        $('ncmPhoneBtn').disabled = true;
+        $('ncmPhoneBtn').textContent = '登录中...';
         const r = await fetch(`${API}/api/admin/ncm/phone`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});
-        const d = await r.json(); showToast(d.msg, d.code===200?'success':'error');
-        if (d.code===200) loadNcmStatus();
+        const d = await r.json();
+        showToast(d.msg, d.code===200?'success':'error');
+        if (d.code===200) { $('ncmPhone').value=''; $('ncmPwd').value=''; loadNcmStatus(); }
+        $('ncmPhoneBtn').disabled = false;
+        $('ncmPhoneBtn').textContent = '登录';
     });
 
     $('qrGenBtn').addEventListener('click', async () => {
+        $('qrGenBtn').disabled = true;
+        $('qrGenBtn').textContent = '生成中...';
         const r = await fetch(`${API}/api/admin/ncm/qr/create`);
         const d = await r.json();
-        if (d.code !== 200) { showToast('生成失败', 'error'); return; }
-        $('qrContainer').innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(d.qr_url)}" alt="QR" class="qr-img">`;
+        if (d.code !== 200) { showToast('生成失败', 'error'); $('qrGenBtn').disabled=false; $('qrGenBtn').textContent='生成二维码'; return; }
+        $('qrContainer').innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(d.qr_url)}" alt="QR" class="qr-img" style="border-radius:8px;background:#fff;padding:8px">`;
         $('qrStatusText').textContent = '等待扫码...';
         if (qrCheckInterval) clearInterval(qrCheckInterval);
         qrCheckInterval = setInterval(async () => {
@@ -146,7 +197,10 @@
             const cd = await cr.json();
             $('qrStatusText').textContent = cd.msg;
             if (cd.status === 'success') { clearInterval(qrCheckInterval); loadNcmStatus(); showToast('扫码登录成功', 'success'); }
-            if (cd.status === 'expired') { clearInterval(qrCheckInterval); $('qrContainer').innerHTML = '<p style="color:var(--danger)">二维码已过期，请重新生成</p>'; }
+            if (cd.status === 'expired') {
+                clearInterval(qrCheckInterval);
+                $('qrContainer').innerHTML = '<p style="color:var(--danger)">二维码已过期，请重新生成</p>';
+            }
         }, 2000);
     });
 
