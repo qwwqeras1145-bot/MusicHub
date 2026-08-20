@@ -1,71 +1,115 @@
 /**
- * MusicHub v4.1 - Admin Panel JS
+ * MusicHub Admin Panel - Complete Rewrite for v4.4+
  */
 (function () {
     'use strict';
+
     const API = '';
-    function $(id) { return document.getElementById(id); }
-    function escapeHtml(t) { if (!t) return ''; const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
-    function showToast(msg, type='info') {
-        const t = document.createElement('div');
-        t.className = `toast ${type}`;
-        t.textContent = msg;
-        document.body.appendChild(t);
-        setTimeout(() => t.remove(), 3000);
-    }
+    const $ = (id) => document.getElementById(id);
+    const escapeHtml = (t) => { if (!t) return ''; const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
 
     let currentUser = null;
-    const loginPage = $('loginPage');
-    const mainApp = $('mainApp');
+    let qrCheckInterval = null;
+    let smsCooldown = 0;
+    let smsTimer = null;
+    let selectedSongs = new Set();
+
+    // ==================== Toast ====================
+    function showToast(msg, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = msg;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3500);
+    }
 
     // ==================== Auth ====================
     async function checkAuth() {
         try {
             const r = await fetch(`${API}/api/auth/status`);
             const d = await r.json();
-            if (d.logged_in) { currentUser = d.username; showMain(); }
-            else showLogin();
-        } catch { showLogin(); }
+            if (d.logged_in) {
+                currentUser = d.username;
+                showMain();
+            } else {
+                showLogin();
+            }
+        } catch (e) {
+            showLogin();
+        }
     }
 
-    function showLogin() { loginPage.classList.remove('hidden'); mainApp.classList.add('hidden'); }
-    function showMain() { loginPage.classList.add('hidden'); mainApp.classList.remove('hidden'); $('userInfo').textContent = currentUser; loadDashboard(); }
+    function showLogin() {
+        $('loginPage').classList.remove('hidden');
+        $('mainApp').classList.add('hidden');
+    }
 
+    function showMain() {
+        $('loginPage').classList.add('hidden');
+        $('mainApp').classList.remove('hidden');
+        loadDashboard();
+    }
+
+    // Login form
     $('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const btn = $('loginSubmitBtn'); const errEl = $('loginError');
-        btn.disabled = true; btn.textContent = '登录中...'; errEl.classList.add('hidden');
+        const btn = $('loginSubmitBtn');
+        const errorEl = $('loginError');
+        btn.disabled = true;
+        btn.textContent = '登录中...';
+        errorEl.classList.add('hidden');
+
         try {
             const r = await fetch(`${API}/api/auth/login`, {
-                method: 'POST', headers: {'Content-Type':'application/json'},
-                body: JSON.stringify({ username: $('loginUsername').value.trim(), password: $('loginPassword').value })
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: $('loginUsername').value.trim(),
+                    password: $('loginPassword').value
+                })
             });
             const d = await r.json();
-            if (d.code === 200) { currentUser = d.username; showMain(); }
-            else { errEl.textContent = d.msg || '登录失败'; errEl.classList.remove('hidden'); }
-        } catch { errEl.textContent = '网络错误'; errEl.classList.remove('hidden'); }
-        btn.disabled = false; btn.textContent = '登 录';
+            if (d.code === 200) {
+                currentUser = d.username;
+                showMain();
+            } else {
+                errorEl.textContent = d.msg || '登录失败';
+                errorEl.classList.remove('hidden');
+            }
+        } catch (err) {
+            errorEl.textContent = '网络错误';
+            errorEl.classList.remove('hidden');
+        }
+        btn.disabled = false;
+        btn.textContent = '登 录';
     });
 
+    // Logout
     $('logoutBtn').addEventListener('click', async () => {
         await fetch(`${API}/api/auth/logout`, { method: 'POST' });
-        currentUser = null; showLogin();
-        $('loginUsername').value = ''; $('loginPassword').value = '';
+        currentUser = null;
+        showLogin();
     });
 
-    // ==================== Sub Tabs ====================
-    document.querySelectorAll('.admin-sub-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-            document.querySelectorAll('.admin-sub-tab').forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            document.querySelectorAll('.admin-sub-panel').forEach(p => p.classList.remove('active'));
-            $('admin-' + tab.dataset.panel).classList.add('active');
-            loadPanel(tab.dataset.panel);
+    // ==================== Navigation ====================
+    document.querySelectorAll('.admin-nav-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Update active state
+            document.querySelectorAll('.admin-nav-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Show corresponding panel
+            const tabName = btn.dataset.tab;
+            document.querySelectorAll('.admin-tab-panel').forEach(p => p.classList.remove('active'));
+            $(`tab-${tabName}`).classList.add('active');
+
+            // Load data
+            loadTabData(tabName);
         });
     });
 
-    function loadPanel(p) {
-        switch(p) {
+    function loadTabData(tabName) {
+        switch (tabName) {
             case 'dashboard': loadDashboard(); break;
             case 'ncm': loadNcmStatus(); break;
             case 'songs': loadSongs(); break;
@@ -75,284 +119,536 @@
     }
 
     // ==================== Dashboard ====================
-    $('refreshDashboard').addEventListener('click', loadDashboard);
     async function loadDashboard() {
         try {
             const r = await fetch(`${API}/api/admin/stats`);
             const d = await r.json();
-            if (d.code !== 200) return;
-            const s = d.server;
-            $('serverStats').innerHTML = `
-                <div class="stat-row"><span>系统</span><span>${s.platform}</span></div>
-                <div class="stat-row"><span>Python</span><span>${s.python}</span></div>
-                <div class="stat-row"><span>负载</span><span>${s.load_avg}</span></div>
-                <div class="stat-row"><span>内存</span><span>${s.mem_used_mb}/${s.mem_total_mb} MB (${s.mem_usage_pct}%)</span></div>
-                <div class="stat-row"><span>磁盘</span><span>${s.disk_used_gb}/${s.disk_total_gb} GB (${s.disk_usage_pct}%)</span></div>
-                <div class="stat-row"><span>在线管理员</span><span>${d.online_admins}</span></div>`;
-            $('dlStats').innerHTML = `
-                <div class="stat-row"><span>已下载歌曲</span><span>${d.total_downloaded}</span></div>
-                <div class="stat-row"><span>磁盘文件数</span><span>${d.downloads?.count||0}</span></div>
-                <div class="stat-row"><span>占用空间</span><span>${d.downloads?.total_size_mb||0} MB</span></div>`;
-        } catch {}
+            if (d.code === 200) {
+                $('serverCpu').textContent = `${d.cpu_usage || 0}%`;
+                $('serverMemory').textContent = `${d.memory_usage || 0}%`;
+                $('serverDisk').textContent = `${d.disk_usage || 0}%`;
+                $('downloadCount').textContent = d.total_downloads || 0;
+            }
+        } catch (e) {
+            console.error('Failed to load dashboard:', e);
+        }
     }
 
-    // ==================== NCM ====================
-    let qrCheckInterval = null;
+    // ==================== NCM Login ====================
+    // Login method tabs
+    document.querySelectorAll('.login-method-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.login-method-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            const method = btn.dataset.method;
+            document.querySelectorAll('.login-form-panel').forEach(p => p.classList.remove('active'));
+            $(`${method}Form`).classList.add('active');
+
+            // Clear QR interval if switching away
+            if (method !== 'qr' && qrCheckInterval) {
+                clearInterval(qrCheckInterval);
+                qrCheckInterval = null;
+            }
+        });
+    });
 
     async function loadNcmStatus() {
         try {
             const r = await fetch(`${API}/api/admin/ncm/status`);
             const d = await r.json();
+
             if (d.logged_in) {
                 const statusColor = d.cookie_expired ? 'var(--danger)' : 'var(--accent)';
                 const statusText = d.cookie_expired ? 'Cookie 已过期' : 'Cookie 有效';
-                const vipBadge = d.vip ? '<span style="background:var(--warning);color:#000;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:8px">VIP</span>' : '';
-                const avatarHtml = d.avatar ? `<img src="${escapeHtml(d.avatar)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover">` : '';
+                const vipBadge = d.vip ? '<span class="vip-badge">VIP</span>' : '';
+                const avatarHtml = d.avatar ? `<img src="${escapeHtml(d.avatar)}" class="ncm-avatar">` : '';
 
-                $('ncmCurrentStatus').innerHTML = `
-                    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+                $('ncmStatus').innerHTML = `
+                    <div class="ncm-status-card">
                         ${avatarHtml}
-                        <div style="flex:1;min-width:200px">
-                            <div style="display:flex;align-items:center;gap:8px">
-                                <span style="color:${statusColor};font-size:16px">●</span>
-                                <strong>${escapeHtml(d.username)}</strong>
+                        <div class="ncm-status-info">
+                            <div class="ncm-status-header">
+                                <span class="ncm-username">${escapeHtml(d.username)}</span>
                                 ${vipBadge}
+                                <span class="ncm-status-dot" style="background:${statusColor}"></span>
+                                <span class="ncm-status-text">${statusText}</span>
                             </div>
-                            <div style="color:var(--text-muted);font-size:12px;margin-top:4px">
-                                <span style="color:${statusColor}">${statusText}</span>
-                                · 登录方式: ${escapeHtml(d.login_method || '未知')}
-                                ${d.captured_at ? ` · 获取于: ${d.captured_at}` : ''}
-                                ${d.last_check ? ` · 最后检测: ${d.last_check}` : ''}
+                            <div class="ncm-status-details">
+                                <span>登录方式: ${escapeHtml(d.login_method || '未知')}</span>
+                                ${d.masked_cookie ? `<span>Cookie: ${escapeHtml(d.masked_cookie)}</span>` : ''}
+                                ${d.last_check ? `<span>最后检测: ${d.last_check}</span>` : ''}
                             </div>
-                            ${d.masked_cookie ? `<div style="color:var(--text-muted);font-size:11px;font-family:monospace;margin-top:2px">${escapeHtml(d.masked_cookie)}</div>` : ''}
                         </div>
-                        <div style="display:flex;gap:8px">
-                            <button id="ncmValidateBtn" class="btn-secondary" style="font-size:12px;padding:6px 12px">验证 Cookie</button>
-                            <button id="ncmLogoutBtn" class="btn-danger" style="font-size:12px;padding:6px 12px">退出</button>
+                        <div class="ncm-status-actions">
+                            <button id="validateCookieBtn" class="btn-secondary btn-sm">验证</button>
+                            <button id="logoutNcmBtn" class="btn-danger btn-sm">退出</button>
                         </div>
-                    </div>`;
+                    </div>
+                `;
 
-                $('ncmLogoutBtn').addEventListener('click', async () => {
-                    await fetch(`${API}/api/admin/ncm/logout`, {method:'POST'});
-                    loadNcmStatus(); showToast('已退出网易云', 'success');
+                $('validateCookieBtn').addEventListener('click', async () => {
+                    $('validateCookieBtn').disabled = true;
+                    $('validateCookieBtn').textContent = '验证中...';
+                    try {
+                        const r = await fetch(`${API}/api/admin/ncm/validate`, { method: 'POST' });
+                        const d = await r.json();
+                        showToast(d.msg, d.code === 200 ? 'success' : 'error');
+                        loadNcmStatus();
+                    } catch (e) {
+                        showToast('验证失败', 'error');
+                    }
+                    $('validateCookieBtn').disabled = false;
+                    $('validateCookieBtn').textContent = '验证';
                 });
-                $('ncmValidateBtn').addEventListener('click', async () => {
-                    $('ncmValidateBtn').disabled = true;
-                    $('ncmValidateBtn').textContent = '验证中...';
-                    const r = await fetch(`${API}/api/admin/ncm/validate`, {method:'POST'});
-                    const d = await r.json();
-                    showToast(d.msg, d.code===200?'success':'error');
+
+                $('logoutNcmBtn').addEventListener('click', async () => {
+                    if (!confirm('确定要退出网易云登录吗？')) return;
+                    await fetch(`${API}/api/admin/ncm/logout`, { method: 'POST' });
+                    showToast('已退出网易云', 'success');
                     loadNcmStatus();
                 });
             } else {
-                const expiredHint = d.cookie_expired ? '<div style="color:var(--danger);font-size:12px;margin-top:4px">上次使用的 Cookie 已过期，请重新登录</div>' : '';
-                $('ncmCurrentStatus').innerHTML = `
-                    <div style="color:var(--text-muted)">
-                        <span style="font-size:16px;color:var(--text-muted)">●</span>
-                        未登录网易云音乐，登录后解锁 VIP 歌曲和高音质下载
-                        ${expiredHint}
-                    </div>`;
+                $('ncmStatus').innerHTML = '<div class="ncm-status-empty">未登录网易云音乐</div>';
             }
-        } catch {}
+        } catch (e) {
+            console.error('Failed to load NCM status:', e);
+        }
     }
 
-    $('ncmCookieBtn').addEventListener('click', async () => {
-        const cookie = $('ncmCookieInput').value.trim();
-        if (!cookie) { showToast('请输入 Cookie', 'error'); return; }
-        $('ncmCookieBtn').disabled = true;
-        $('ncmCookieBtn').textContent = '验证中...';
-        const r = await fetch(`${API}/api/admin/ncm/cookie`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cookie})});
-        const d = await r.json();
-        showToast(d.msg, d.code===200?'success':'error');
-        if (d.code===200) { $('ncmCookieInput').value = ''; loadNcmStatus(); }
-        $('ncmCookieBtn').disabled = false;
-        $('ncmCookieBtn').textContent = '验证并登录';
-    });
+    // SMS Login
+    $('sendSmsBtn').addEventListener('click', async () => {
+        const phone = $('smsPhone').value.trim();
+        if (!phone) {
+            showToast('请输入手机号', 'error');
+            return;
+        }
+        if (smsCooldown > 0) {
+            showToast(`请等待 ${smsCooldown} 秒`, 'error');
+            return;
+        }
 
-    $('ncmPhoneBtn').addEventListener('click', async () => {
-        const phone = $('ncmPhone').value.trim(), password = $('ncmPwd').value, captcha = $('ncmCaptcha').value.trim();
-        if (!phone) { showToast('请输入手机号', 'error'); return; }
-        if (!password && !captcha) { showToast('请输入密码或验证码', 'error'); return; }
-        $('ncmPhoneBtn').disabled = true;
-        $('ncmPhoneBtn').textContent = '登录中...';
-        const r = await fetch(`${API}/api/admin/ncm/phone`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password,captcha})});
-        const d = await r.json();
-        showToast(d.msg, d.code===200?'success':'error');
-        if (d.code===200) { $('ncmPhone').value=''; $('ncmPwd').value=''; $('ncmCaptcha').value=''; loadNcmStatus(); }
-        $('ncmPhoneBtn').disabled = false;
-        $('ncmPhoneBtn').textContent = '登录';
-    });
+        $('sendSmsBtn').disabled = true;
+        $('sendSmsBtn').textContent = '发送中...';
 
-    // SMS send button
-    let smsCooldown = 0;
-    $('ncmSmsBtn').addEventListener('click', async () => {
-        const phone = $('ncmPhone').value.trim();
-        if (!phone) { showToast('请先输入手机号', 'error'); return; }
-        if (phone.length !== 11 || !/^\d+$/.test(phone)) { showToast('请输入正确的11位手机号', 'error'); return; }
-        if (smsCooldown > 0) { showToast(`请等待 ${smsCooldown} 秒后重试`, 'error'); return; }
-        
-        $('ncmSmsBtn').disabled = true;
-        $('ncmSmsBtn').textContent = '发送中...';
-        const r = await fetch(`${API}/api/admin/ncm/sms/send`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone})});
-        const d = await r.json();
-        showToast(d.msg, d.code===200?'success':'error');
-        
-        if (d.code === 200) {
-            // Start cooldown (60 seconds)
-            smsCooldown = 60;
-            $('ncmSmsBtn').textContent = `${smsCooldown}s`;
-            const timer = setInterval(() => {
-                smsCooldown--;
-                if (smsCooldown <= 0) {
-                    clearInterval(timer);
-                    $('ncmSmsBtn').disabled = false;
-                    $('ncmSmsBtn').textContent = '发送验证码';
-                } else {
-                    $('ncmSmsBtn').textContent = `${smsCooldown}s`;
-                }
-            }, 1000);
-        } else {
-            $('ncmSmsBtn').disabled = false;
-            $('ncmSmsBtn').textContent = '发送验证码';
+        try {
+            const r = await fetch(`${API}/api/admin/ncm/sms/send`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone })
+            });
+            const d = await r.json();
+
+            if (d.code === 200) {
+                showToast('验证码已发送', 'success');
+                smsCooldown = 60;
+                smsTimer = setInterval(() => {
+                    smsCooldown--;
+                    if (smsCooldown <= 0) {
+                        clearInterval(smsTimer);
+                        $('sendSmsBtn').disabled = false;
+                        $('sendSmsBtn').textContent = '发送验证码';
+                    } else {
+                        $('sendSmsBtn').textContent = `${smsCooldown}s`;
+                    }
+                }, 1000);
+            } else {
+                showToast(d.msg || '发送失败', 'error');
+                $('sendSmsBtn').disabled = false;
+                $('sendSmsBtn').textContent = '发送验证码';
+            }
+        } catch (e) {
+            showToast('网络错误', 'error');
+            $('sendSmsBtn').disabled = false;
+            $('sendSmsBtn').textContent = '发送验证码';
         }
     });
 
-    async function generateQR() {
-        const container = $('qrContainer');
-        container.innerHTML = '<div style="color:var(--text-muted);padding:40px">正在生成二维码...</div>';
-        const r = await fetch(`${API}/api/admin/ncm/qr/create`);
-        const d = await r.json();
-        if (d.code !== 200) { showToast('生成失败', 'error'); container.innerHTML = '<button id="qrRetryBtn" class="btn-secondary">重试</button>'; $('qrRetryBtn').addEventListener('click', generateQR); return; }
+    $('smsForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const phone = $('smsPhone').value.trim();
+        const captcha = $('smsCode').value.trim();
 
-        // Use self-rendered QR code (no third-party dependency)
-        container.innerHTML = `<div id="qrCodeBox" style="display:inline-block;padding:12px;background:#fff;border-radius:8px"></div>`;
-        renderQRCode($('qrCodeBox'), d.qr_url);
+        if (!phone || !captcha) {
+            showToast('请输入手机号和验证码', 'error');
+            return;
+        }
 
-        $('qrStatusText').textContent = '等待扫码...';
-        if (qrCheckInterval) clearInterval(qrCheckInterval);
+        const btn = e.target.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.textContent = '登录中...';
 
-        let pollCount = 0;
-        const maxPolls = 90; // 3 minutes at 2s intervals
-        qrCheckInterval = setInterval(async () => {
-            pollCount++;
-            if (pollCount > maxPolls) {
-                clearInterval(qrCheckInterval);
-                $('qrStatusText').textContent = '二维码已超时，请重新生成';
-                container.innerHTML = '<button id="qrRetryBtn" class="btn-secondary">重新生成</button>';
-                $('qrRetryBtn').addEventListener('click', generateQR);
-                return;
+        try {
+            const r = await fetch(`${API}/api/admin/ncm/phone`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone, captcha })
+            });
+            const d = await r.json();
+
+            if (d.code === 200) {
+                showToast('登录成功', 'success');
+                $('smsPhone').value = '';
+                $('smsCode').value = '';
+                loadNcmStatus();
+            } else {
+                showToast(d.msg || '登录失败', 'error');
             }
-            try {
-                const cr = await fetch(`${API}/api/admin/ncm/qr/check?key=${d.key}`);
-                const cd = await cr.json();
-                $('qrStatusText').textContent = cd.msg;
-                if (cd.status === 'success') {
-                    clearInterval(qrCheckInterval);
-                    loadNcmStatus();
-                    showToast(`扫码登录成功${cd.username ? '：' + cd.username : ''}`, 'success');
-                }
-                if (cd.status === 'expired') {
-                    clearInterval(qrCheckInterval);
-                    $('qrStatusText').innerHTML = `<span style="color:var(--danger)">${escapeHtml(cd.msg)}</span>`;
-                    container.innerHTML = '<button id="qrRetryBtn" class="btn-secondary">重新生成</button>';
-                    $('qrRetryBtn').addEventListener('click', generateQR);
-                }
-            } catch {}
-        }, 2000);
-    }
+        } catch (e) {
+            showToast('网络错误', 'error');
+        }
 
-    // Simple QR code renderer using canvas
-    function renderQRCode(container, data) {
-        // Use a lightweight QR library loaded from CDN
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
-        script.onload = () => {
-            const canvas = document.createElement('canvas');
-            container.appendChild(canvas);
-            QRCode.toCanvas(canvas, data, { width: 200, margin: 1, color: { dark: '#000', light: '#fff' } });
-        };
-        script.onerror = () => {
-            // Fallback to img tag with API
-            container.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(data)}" alt="QR" style="width:200px;height:200px">`;
-        };
-        document.head.appendChild(script);
-    }
-
-    $('qrGenBtn').addEventListener('click', generateQR);
-
-    // ==================== Songs ====================
-    let selectedSongs = new Set();
-    $('refreshSongs').addEventListener('click', loadSongs);
-    $('cleanupBtn').addEventListener('click', async () => {
-        const r = await fetch(`${API}/api/admin/songs/cleanup`, {method:'POST'});
-        const d = await r.json(); showToast(d.msg, 'success'); loadSongs();
+        btn.disabled = false;
+        btn.textContent = '登录';
     });
+
+    // QR Login
+    $('genQrBtn').addEventListener('click', async () => {
+        $('genQrBtn').disabled = true;
+        $('genQrBtn').textContent = '生成中...';
+        $('qrHint').textContent = '生成中...';
+
+        try {
+            const r = await fetch(`${API}/api/admin/ncm/qr/create`);
+            const d = await r.json();
+
+            if (d.code === 200) {
+                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(d.qr_url)}`;
+                $('qrCode').innerHTML = `<img src="${qrUrl}" class="qr-img">`;
+                $('qrHint').textContent = '请使用网易云音乐 App 扫码';
+                $('genQrBtn').style.display = 'none';
+
+                // Start polling
+                qrCheckInterval = setInterval(async () => {
+                    try {
+                        const r = await fetch(`${API}/api/admin/ncm/qr/check?key=${d.key}`);
+                        const cd = await r.json();
+
+                        if (cd.status === 'success') {
+                            clearInterval(qrCheckInterval);
+                            qrCheckInterval = null;
+                            showToast('扫码登录成功', 'success');
+                            loadNcmStatus();
+                        } else if (cd.status === 'scanned') {
+                            $('qrHint').textContent = '已扫码，请在手机上确认';
+                        } else if (cd.status === 'expired') {
+                            clearInterval(qrCheckInterval);
+                            qrCheckInterval = null;
+                            $('qrHint').textContent = '二维码已过期，请重新生成';
+                            $('genQrBtn').style.display = '';
+                            $('genQrBtn').disabled = false;
+                            $('genQrBtn').textContent = '生成二维码';
+                        } else {
+                            $('qrHint').textContent = cd.msg || '等待扫码...';
+                        }
+                    } catch (e) {
+                        console.error('QR check failed:', e);
+                    }
+                }, 2000);
+            } else {
+                showToast(d.msg || '生成失败', 'error');
+                $('qrHint').textContent = '生成失败，请重试';
+            }
+        } catch (e) {
+            showToast('网络错误', 'error');
+            $('qrHint').textContent = '网络错误，请重试';
+        }
+
+        $('genQrBtn').disabled = false;
+        $('genQrBtn').textContent = '生成二维码';
+    });
+
+    // Cookie Login
+    $('cookieForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const cookie = $('cookieInput').value.trim();
+
+        if (!cookie) {
+            showToast('请输入 Cookie', 'error');
+            return;
+        }
+
+        const btn = e.target.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.textContent = '登录中...';
+
+        try {
+            const r = await fetch(`${API}/api/admin/ncm/cookie`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cookie })
+            });
+            const d = await r.json();
+
+            if (d.code === 200) {
+                showToast('登录成功', 'success');
+                $('cookieInput').value = '';
+                loadNcmStatus();
+            } else {
+                showToast(d.msg || '登录失败', 'error');
+            }
+        } catch (e) {
+            showToast('网络错误', 'error');
+        }
+
+        btn.disabled = false;
+        btn.textContent = '登录';
+    });
+
+    // ==================== Songs Management ====================
+    $('refreshSongsBtn').addEventListener('click', loadSongs);
 
     async function loadSongs() {
         selectedSongs.clear();
         try {
             const r = await fetch(`${API}/api/admin/songs`);
             const d = await r.json();
-            if (!d.songs?.length) { $('songListAdmin').innerHTML = '<p style="color:var(--text-muted)">暂无已下载歌曲</p>'; return; }
-            $('songListAdmin').innerHTML = `<table><thead><tr><th><input type="checkbox" id="selectAllSongs"></th><th>歌曲</th><th>歌手</th><th>大小</th><th>下载时间</th><th>状态</th></tr></thead><tbody>` +
-                d.songs.map(s => `<tr><td><input type="checkbox" class="song-check" data-path="${escapeHtml(s.path)}"></td><td>${escapeHtml(s.name)}</td><td>${escapeHtml(s.artist)}</td><td>${s.size_mb} MB</td><td>${s.downloaded_at}</td><td>${s.exists?'<span style="color:var(--accent)">存在</span>':'<span style="color:var(--danger)">已删除</span>'}</td></tr>`).join('') +
-                '</tbody></table>';
-            $('selectAllSongs').addEventListener('change', e => {
-                document.querySelectorAll('.song-check').forEach(c => { c.checked = e.target.checked; if(e.target.checked) selectedSongs.add(c.dataset.path); else selectedSongs.delete(c.dataset.path); });
-            });
-            document.querySelectorAll('.song-check').forEach(c => {
-                c.addEventListener('change', e => { if(e.target.checked) selectedSongs.add(c.dataset.path); else selectedSongs.delete(c.dataset.path); });
-            });
-        } catch {}
+
+            if (d.code === 200 && d.songs && d.songs.length > 0) {
+                let html = `
+                    <table class="songs-table">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="selectAll"></th>
+                                <th>歌曲</th>
+                                <th>艺术家</th>
+                                <th>大小</th>
+                                <th>下载时间</th>
+                                <th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                d.songs.forEach(song => {
+                    const statusClass = song.exists ? 'status-ok' : 'status-missing';
+                    const statusText = song.exists ? '存在' : '已删除';
+                    html += `
+                        <tr>
+                            <td><input type="checkbox" class="song-checkbox" data-path="${escapeHtml(song.path)}"></td>
+                            <td>${escapeHtml(song.name)}</td>
+                            <td>${escapeHtml(song.artist)}</td>
+                            <td>${song.size_mb} MB</td>
+                            <td>${song.downloaded_at}</td>
+                            <td><span class="${statusClass}">${statusText}</span></td>
+                        </tr>
+                    `;
+                });
+
+                html += '</tbody></table>';
+                $('songsList').innerHTML = html;
+
+                // Select all checkbox
+                $('selectAll').addEventListener('change', (e) => {
+                    document.querySelectorAll('.song-checkbox').forEach(cb => {
+                        cb.checked = e.target.checked;
+                        if (e.target.checked) {
+                            selectedSongs.add(cb.dataset.path);
+                        } else {
+                            selectedSongs.delete(cb.dataset.path);
+                        }
+                    });
+                });
+
+                // Individual checkboxes
+                document.querySelectorAll('.song-checkbox').forEach(cb => {
+                    cb.addEventListener('change', (e) => {
+                        if (e.target.checked) {
+                            selectedSongs.add(cb.dataset.path);
+                        } else {
+                            selectedSongs.delete(cb.dataset.path);
+                        }
+                    });
+                });
+            } else {
+                $('songsList').innerHTML = '<div class="empty-state">暂无歌曲</div>';
+            }
+        } catch (e) {
+            console.error('Failed to load songs:', e);
+            $('songsList').innerHTML = '<div class="empty-state">加载失败</div>';
+        }
     }
 
     $('deleteSelectedBtn').addEventListener('click', async () => {
-        if (!selectedSongs.size) { showToast('请先选择歌曲', 'error'); return; }
-        if (!confirm(`确认删除 ${selectedSongs.size} 首歌曲？`)) return;
-        const r = await fetch(`${API}/api/admin/songs/delete`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({paths:Array.from(selectedSongs)})});
-        const d = await r.json(); showToast(d.msg, 'success'); loadSongs();
+        if (selectedSongs.size === 0) {
+            showToast('请先选择歌曲', 'error');
+            return;
+        }
+
+        if (!confirm(`确定要删除选中的 ${selectedSongs.size} 首歌曲吗？`)) {
+            return;
+        }
+
+        try {
+            const r = await fetch(`${API}/api/admin/songs/delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ paths: Array.from(selectedSongs) })
+            });
+            const d = await r.json();
+
+            if (d.code === 200) {
+                showToast(`已删除 ${d.deleted} 首歌曲`, 'success');
+                loadSongs();
+            } else {
+                showToast(d.msg || '删除失败', 'error');
+            }
+        } catch (e) {
+            showToast('网络错误', 'error');
+        }
     });
 
-    // ==================== Accounts ====================
+    $('cleanupBtn').addEventListener('click', async () => {
+        if (!confirm('确定要清理所有过期歌曲吗？')) {
+            return;
+        }
+
+        try {
+            const r = await fetch(`${API}/api/admin/songs/cleanup`, { method: 'POST' });
+            const d = await r.json();
+
+            if (d.code === 200) {
+                showToast(`已清理 ${d.cleaned} 首歌曲`, 'success');
+                loadSongs();
+            } else {
+                showToast(d.msg || '清理失败', 'error');
+            }
+        } catch (e) {
+            showToast('网络错误', 'error');
+        }
+    });
+
+    // ==================== Accounts Management ====================
     async function loadAccounts() {
         try {
             const r = await fetch(`${API}/api/admin/accounts`);
             const d = await r.json();
-            $('adminListTable').innerHTML = `<table><thead><tr><th>用户名</th><th>创建时间</th><th>操作</th></tr></thead><tbody>` +
-                d.accounts.map(a => `<tr><td>${escapeHtml(a.username)}${a.is_default?' <span style="color:var(--accent)">(默认)</span>':''}</td><td>${a.created}</td><td>${!a.is_default?`<button class="btn-danger btn-sm" data-del="${escapeHtml(a.username)}">删除</button>`:'-'}</td></tr>`).join('') +
-                '</tbody></table>';
-            document.querySelectorAll('[data-del]').forEach(btn => {
-                btn.addEventListener('click', async () => {
-                    if (!confirm(`确认删除管理员 ${btn.dataset.del}？`)) return;
-                    const r = await fetch(`${API}/api/admin/delete_account`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:btn.dataset.del})});
-                    const d = await r.json(); showToast(d.msg, d.code===200?'success':'error'); loadAccounts();
+
+            if (d.code === 200 && d.accounts && d.accounts.length > 0) {
+                let html = '<ul class="admin-list">';
+                d.accounts.forEach(acc => {
+                    const badge = acc.is_default ? '<span class="badge">默认</span>' : '';
+                    const deleteBtn = !acc.is_default ? `<button class="btn-danger btn-sm" data-username="${escapeHtml(acc.username)}">删除</button>` : '';
+                    html += `
+                        <li class="admin-list-item">
+                            <span class="admin-username">${escapeHtml(acc.username)} ${badge}</span>
+                            <span class="admin-created">创建于 ${acc.created}</span>
+                            ${deleteBtn}
+                        </li>
+                    `;
                 });
-            });
-        } catch {}
+                html += '</ul>';
+                $('adminList').innerHTML = html;
+
+                // Delete buttons
+                document.querySelectorAll('[data-username]').forEach(btn => {
+                    btn.addEventListener('click', async () => {
+                        const username = btn.dataset.username;
+                        if (!confirm(`确定要删除管理员 ${username} 吗？`)) return;
+
+                        try {
+                            const r = await fetch(`${API}/api/admin/delete_account`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ username })
+                            });
+                            const d = await r.json();
+
+                            if (d.code === 200) {
+                                showToast('删除成功', 'success');
+                                loadAccounts();
+                            } else {
+                                showToast(d.msg || '删除失败', 'error');
+                            }
+                        } catch (e) {
+                            showToast('网络错误', 'error');
+                        }
+                    });
+                });
+            } else {
+                $('adminList').innerHTML = '<div class="empty-state">加载失败</div>';
+            }
+        } catch (e) {
+            console.error('Failed to load accounts:', e);
+        }
     }
 
-    $('changePwdBtn').addEventListener('click', async () => {
-        const o = $('oldPwd').value, n = $('newPwd').value;
-        if (!o||!n) { showToast('请填写完整','error'); return; }
-        const r = await fetch(`${API}/api/admin/change_password`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({old_password:o,new_password:n})});
-        const d = await r.json(); showToast(d.msg, d.code===200?'success':'error');
-        if (d.code===200) { $('oldPwd').value=''; $('newPwd').value=''; }
+    $('changePasswordForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const oldPwd = $('oldPassword').value;
+        const newPwd = $('newPassword').value;
+        const confirmPwd = $('confirmPassword').value;
+
+        if (!oldPwd || !newPwd || !confirmPwd) {
+            showToast('请填写所有字段', 'error');
+            return;
+        }
+
+        if (newPwd !== confirmPwd) {
+            showToast('新密码不匹配', 'error');
+            return;
+        }
+
+        if (newPwd.length < 6) {
+            showToast('密码至少6位', 'error');
+            return;
+        }
+
+        try {
+            const r = await fetch(`${API}/api/admin/change_password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ old_password: oldPwd, new_password: newPwd })
+            });
+            const d = await r.json();
+
+            if (d.code === 200) {
+                showToast('密码修改成功', 'success');
+                $('oldPassword').value = '';
+                $('newPassword').value = '';
+                $('confirmPassword').value = '';
+            } else {
+                showToast(d.msg || '修改失败', 'error');
+            }
+        } catch (e) {
+            showToast('网络错误', 'error');
+        }
     });
 
-    $('changeNameBtn').addEventListener('click', async () => {
-        const n = $('newUsername').value.trim(), p = $('confirmPwdForName').value;
-        if (!n||!p) { showToast('请填写完整','error'); return; }
-        const r = await fetch(`${API}/api/admin/change_username`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({new_username:n,password:p})});
-        const d = await r.json(); showToast(d.msg, d.code===200?'success':'error');
-        if (d.code===200) { currentUser = d.new_username; $('userInfo').textContent = currentUser; loadAccounts(); }
-    });
+    $('addAdminForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = $('newAdminUsername').value.trim();
+        const password = $('newAdminPassword').value;
 
-    $('createAdminBtn').addEventListener('click', async () => {
-        const u = $('newAdminUser').value.trim(), p = $('newAdminPwd').value;
-        if (!u||!p) { showToast('请填写完整','error'); return; }
-        const r = await fetch(`${API}/api/admin/create_account`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})});
-        const d = await r.json(); showToast(d.msg, d.code===200?'success':'error');
-        if (d.code===200) { $('newAdminUser').value=''; $('newAdminPwd').value=''; loadAccounts(); }
+        if (!username || !password) {
+            showToast('请填写所有字段', 'error');
+            return;
+        }
+
+        if (password.length < 6) {
+            showToast('密码至少6位', 'error');
+            return;
+        }
+
+        try {
+            const r = await fetch(`${API}/api/admin/create_account`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const d = await r.json();
+
+            if (d.code === 200) {
+                showToast('创建成功', 'success');
+                $('newAdminUsername').value = '';
+                $('newAdminPassword').value = '';
+                loadAccounts();
+            } else {
+                showToast(d.msg || '创建失败', 'error');
+            }
+        } catch (e) {
+            showToast('网络错误', 'error');
+        }
     });
 
     // ==================== Settings ====================
@@ -360,34 +656,44 @@
         try {
             const r = await fetch(`${API}/api/admin/settings`);
             const d = await r.json();
-            if (d.code===200) {
-                $('settingCache').checked = d.settings.cache_downloads;
-                $('settingAutoClean').checked = d.settings.auto_cleanup_enabled;
-                $('settingCleanHours').value = d.settings.auto_cleanup_hours;
-                $('settingAdminPath').value = d.settings.admin_path || '/aimdrd';
+
+            if (d.code === 200) {
+                $('cacheMode').value = d.settings.cache_mode || 'server';
+                $('cleanupHours').value = d.settings.cleanup_hours || 24;
+                $('adminPath').value = d.settings.admin_path || '/admin';
             }
-        } catch {}
+        } catch (e) {
+            console.error('Failed to load settings:', e);
+        }
     }
 
-    $('saveSettingsBtn').addEventListener('click', async () => {
-        const adminPath = $('settingAdminPath').value.trim();
-        if (!adminPath.startsWith('/')) { showToast('路径必须以 / 开头', 'error'); return; }
-        const r = await fetch(`${API}/api/admin/settings/update`, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({
-                cache_downloads: $('settingCache').checked,
-                auto_cleanup_enabled: $('settingAutoClean').checked,
-                auto_cleanup_hours: parseInt($('settingCleanHours').value)||24,
-                admin_path: adminPath
-            })
-        });
-        const d = await r.json();
-        showToast(d.msg, 'success');
-        if (d.code === 200) {
-            showToast('管理路径已更新，刷新页面后请使用新路径访问', 'success');
+    $('settingsForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const settings = {
+            cache_mode: $('cacheMode').value,
+            cleanup_hours: parseInt($('cleanupHours').value) || 24,
+            admin_path: $('adminPath').value.trim() || '/admin'
+        };
+
+        try {
+            const r = await fetch(`${API}/api/admin/settings/update`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            });
+            const d = await r.json();
+
+            if (d.code === 200) {
+                showToast('设置已保存', 'success');
+            } else {
+                showToast(d.msg || '保存失败', 'error');
+            }
+        } catch (e) {
+            showToast('网络错误', 'error');
         }
     });
 
-    // Init
+    // ==================== Init ====================
     checkAuth();
 })();
