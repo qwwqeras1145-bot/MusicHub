@@ -120,26 +120,19 @@ jobs:
       - name: Build Android APK
         working-directory: ./android
         run: |
-          gradle assembleDebug --no-daemon --stacktrace --info 2>&1 | tail -50
+          gradle assembleDebug --no-daemon --stacktrace
 
-      - name: Rename APK
-        run: |
-          find android/ -name "*.apk" -type f
-          APK=$(find android/ -name "*.apk" -type f | head -1)
-          cp "$APK" MusicHub.apk
-          ls -lh MusicHub.apk
-
-      - name: Upload artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: MusicHub-apk
-          path: MusicHub.apk
+          path: android/app/build/outputs/apk/debug/*.apk
 
       - name: Create Release and Upload
         if: startsWith(github.ref, 'refs/tags/')
         uses: ncipollo/release-action@v1
         with:
-          artifacts: MusicHub.apk
+          artifacts: "android/app/build/outputs/apk/debug/*.apk"
           allowUpdates: true
           token: ${{ secrets.GITHUB_TOKEN }}
 
