@@ -473,7 +473,7 @@ def _validate_ncm_cookie(cookie_str: str) -> dict:
 
 # Background thread: auto-check NCM cookie validity
 def ncm_cookie_check_loop():
-    """Check NCM cookie validity every 30 minutes."""
+    """Check NCM cookie validity every 30 minutes using active API instance."""
     global api, downloader
     while True:
         time.sleep(1800)  # 30 minutes
@@ -482,8 +482,16 @@ def ncm_cookie_check_loop():
             ncm = cfg.get("ncm", {})
             if not ncm.get("logged_in") or not ncm.get("cookie"):
                 continue
-            result = _validate_ncm_cookie(ncm["cookie"])
-            if not result["valid"]:
+            # Use the active global api (which has the cookie set)
+            status = api.get_login_status()
+            if status.get("code") == 200 and status.get("profile"):
+                profile = status["profile"]
+                cfg["ncm"]["cookie_expired"] = False
+                cfg["ncm"]["username"] = profile.get("nickname", "未知")
+                cfg["ncm"]["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                cfg["ncm"]["vip"] = profile.get("vipType", 0) > 0
+                save_config(cfg)
+            else:
                 # Cookie expired
                 cfg["ncm"]["logged_in"] = False
                 cfg["ncm"]["cookie_expired"] = True
@@ -492,12 +500,6 @@ def ncm_cookie_check_loop():
                 # Reset API to non-logged-in state
                 api = NetEaseAPI()
                 downloader = Downloader(api)
-            else:
-                cfg["ncm"]["cookie_expired"] = False
-                cfg["ncm"]["username"] = result["username"]
-                cfg["ncm"]["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                cfg["ncm"]["vip"] = result.get("vip", False)
-                save_config(cfg)
         except Exception:
             pass
 
@@ -527,22 +529,26 @@ def ncm_status():
         "avatar": ncm.get("avatar", ""),
     }
 
-    # If logged in but not checked recently, validate now
+    # If logged in but not checked recently, validate now using active API
     if logged_in and not cookie_expired and not ncm.get("last_check"):
-        check = _validate_ncm_cookie(ncm.get("cookie", ""))
-        if check["valid"]:
-            result["username"] = check["username"]
-            result["user_id"] = check.get("user_id", 0)
-            result["vip"] = check.get("vip", False)
-            result["avatar"] = check.get("avatar", "")
-            result["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # Save
-            ncm["username"] = check["username"]
-            ncm["user_id"] = check.get("user_id", 0)
-            ncm["vip"] = check.get("vip", False)
-            ncm["avatar"] = check.get("avatar", "")
-            ncm["last_check"] = result["last_check"]
-            save_config(cfg)
+        try:
+            status = api.get_login_status()
+            if status.get("code") == 200 and status.get("profile"):
+                profile = status["profile"]
+                result["username"] = profile.get("nickname", "未知")
+                result["user_id"] = profile.get("userId", 0)
+                result["vip"] = profile.get("vipType", 0) > 0
+                result["avatar"] = profile.get("avatarUrl", "")
+                result["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # Save
+                ncm["username"] = result["username"]
+                ncm["user_id"] = result["user_id"]
+                ncm["vip"] = result["vip"]
+                ncm["avatar"] = result["avatar"]
+                ncm["last_check"] = result["last_check"]
+                save_config(cfg)
+        except Exception:
+            pass
         else:
             result["cookie_expired"] = True
             ncm["cookie_expired"] = True
@@ -553,7 +559,8 @@ def ncm_status():
 @app.route("/api/admin/ncm/validate", methods=["POST"])
 @require_auth
 def ncm_validate():
-    """Manually validate current NCM cookie."""
+    """Manually validate current NCM cookie using the active API instance."""
+    global api, downloader
     cfg = load_config()
     ncm = cfg.get("ncm", {})
     cookie = ncm.get("cookie", "")
@@ -564,24 +571,38 @@ def ncm_validate():
             return jsonify({"code": -1, "msg": "Cookie 数据丢失，请重新登录"})
         return jsonify({"code": -1, "msg": "未登录网易云"})
     
-    result = _validate_ncm_cookie(cookie)
-    if result["valid"]:
-        ncm["username"] = result["username"]
-        ncm["user_id"] = result.get("user_id", 0)
-        ncm["vip"] = result.get("vip", False)
-        ncm["avatar"] = result.get("avatar", "")
-        ncm["cookie_expired"] = False
-        ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cfg["ncm"] = ncm
-        save_config(cfg)
-        return jsonify({"code": 200, "msg": "Cookie 有效", **result})
-    else:
-        # Cookie invalid, but don't clear logged_in yet - let user decide
-        ncm["cookie_expired"] = True
-        ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cfg["ncm"] = ncm
-        save_config(cfg)
-        return jsonify({"code": -1, "msg": "Cookie 已失效，请重新登录", "valid": False})
+    # Use the ACTIVE global api instance (which was set during login)
+    # instead of creating a new one - this preserves session state
+    try:
+        status = api.get_login_status()
+        if status.get("code") == 200 and status.get("profile"):
+            profile = status["profile"]
+            ncm["username"] = profile.get("nickname", "未知")
+            ncm["user_id"] = profile.get("userId", 0)
+            ncm["vip"] = profile.get("vipType", 0) > 0
+            ncm["avatar"] = profile.get("avatarUrl", "")
+            ncm["cookie_expired"] = False
+            ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cfg["ncm"] = ncm
+            save_config(cfg)
+            return jsonify({
+                "code": 200, "msg": "Cookie 有效",
+                "valid": True,
+                "username": ncm["username"],
+                "user_id": ncm["user_id"],
+                "vip": ncm["vip"],
+                "avatar": ncm["avatar"],
+            })
+        else:
+            ncm["cookie_expired"] = True
+            ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cfg["ncm"] = ncm
+            save_config(cfg)
+            return jsonify({"code": -1, "msg": "Cookie 已失效，请重新登录", "valid": False})
+    except Exception as e:
+        import sys
+        print(f"[NCM Validate] Error: {e}", file=sys.stderr)
+        return jsonify({"code": -1, "msg": f"验证出错: {str(e)}", "valid": False})
 
 @app.route("/api/admin/ncm/cookie", methods=["POST"])
 @require_auth
@@ -597,36 +618,45 @@ def ncm_cookie_login():
     if not cookie or "MUSIC_U" not in cookie:
         return jsonify({"code": -1, "msg": "Cookie 格式错误，请确保包含 MUSIC_U"})
 
-    # Validate cookie before saving
-    validation = _validate_ncm_cookie(cookie)
-    if not validation["valid"]:
-        return jsonify({"code": -1, "msg": "Cookie 无效或已过期，请重新获取"})
-
-    # Apply cookie
+    # Apply cookie to API first
     api = NetEaseAPI(cookie=cookie)
     downloader = Downloader(api)
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cfg = load_config()
-    cfg["ncm"] = {
-        "cookie": cookie,
-        "logged_in": True,
-        "cookie_expired": False,
-        "username": validation["username"],
-        "user_id": validation.get("user_id", 0),
-        "vip": validation.get("vip", False),
-        "avatar": validation.get("avatar", ""),
-        "login_method": "cookie",
-        "captured_at": now,
-        "last_check": now,
-    }
-    save_config(cfg)
-    return jsonify({
-        "code": 200,
-        "msg": "网易云登录成功",
-        "username": validation["username"],
-        "vip": validation.get("vip", False),
-    })
+    # Validate using the active api instance (not a new one)
+    try:
+        status = api.get_login_status()
+        if status.get("code") == 200 and status.get("profile"):
+            profile = status["profile"]
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            cfg = load_config()
+            cfg["ncm"] = {
+                "cookie": cookie,
+                "logged_in": True,
+                "cookie_expired": False,
+                "username": profile.get("nickname", "未知"),
+                "user_id": profile.get("userId", 0),
+                "vip": profile.get("vipType", 0) > 0,
+                "avatar": profile.get("avatarUrl", ""),
+                "login_method": "cookie",
+                "captured_at": now,
+                "last_check": now,
+            }
+            save_config(cfg)
+            return jsonify({
+                "code": 200,
+                "msg": "网易云登录成功",
+                "username": cfg["ncm"]["username"],
+                "vip": cfg["ncm"]["vip"],
+            })
+        else:
+            # Reset api since validation failed
+            api = NetEaseAPI()
+            downloader = Downloader(api)
+            return jsonify({"code": -1, "msg": "Cookie 无效或已过期，请重新获取"})
+    except Exception as e:
+        api = NetEaseAPI()
+        downloader = Downloader(api)
+        return jsonify({"code": -1, "msg": f"Cookie 验证出错: {str(e)}"})
 
 @app.route("/api/admin/ncm/phone", methods=["POST"])
 @require_auth
