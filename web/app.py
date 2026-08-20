@@ -624,12 +624,19 @@ def ncm_phone_login():
     data = request.get_json() or {}
     phone = data.get("phone", "").strip()
     password = data.get("password", "").strip()
+    captcha = data.get("captcha", "").strip()
     if not phone:
         return jsonify({"code": -1, "msg": "请输入手机号"})
-    if not password:
-        return jsonify({"code": -1, "msg": "请输入密码"})
 
-    result = api.login_cellphone(phone, password)
+    if captcha:
+        # SMS captcha login
+        result = api.login_cellphone(phone, captcha=captcha)
+    elif password:
+        # Password login
+        result = api.login_cellphone(phone, password)
+    else:
+        return jsonify({"code": -1, "msg": "请输入密码或验证码"})
+
     if result.get("code") == 200:
         profile = result.get("profile", {})
         cookie = result.get("cookie", "")
@@ -661,6 +668,33 @@ def ncm_phone_login():
         })
     return jsonify({"code": result.get("code", -1), "msg": result.get("msg", "登录失败")})
 
+
+@app.route("/api/admin/ncm/sms/send", methods=["POST"])
+@require_auth
+def ncm_sms_send():
+    """Send SMS verification code for NCM login."""
+    data = request.get_json() or {}
+    phone = data.get("phone", "").strip()
+    if not phone:
+        return jsonify({"code": -1, "msg": "请输入手机号"})
+    if len(phone) != 11 or not phone.isdigit():
+        return jsonify({"code": -1, "msg": "请输入正确的11位手机号"})
+
+    url = f"{NETEASE_API_BASE}/weapi/sms/captcha/sent"
+    result = api._request("POST", url, {
+        "cellphone": phone,
+        "ctcode": "86",
+    })
+    
+    code = result.get("code", 0)
+    if code == 200:
+        return jsonify({"code": 200, "msg": "验证码已发送，请查看手机短信"})
+    elif code == 505:
+        return jsonify({"code": -1, "msg": "发送过于频繁，请稍后再试"})
+    else:
+        msg = result.get("message", result.get("msg", "发送失败"))
+        return jsonify({"code": -1, "msg": f"验证码发送失败: {msg}"})
+
 @app.route("/api/admin/ncm/qr/create")
 @require_auth
 def ncm_qr_create():
@@ -684,10 +718,27 @@ def ncm_qr_check():
     url = f"{NETEASE_API_BASE}/weapi/login/qrcode/client/login"
     result = api._request("POST", url, {"key": key, "type": 1})
     code = result.get("code", 0)
-    # 801=等待扫码, 802=已扫码待确认, 803=登录成功
+    msg = result.get("message", "")
+    
+    # Log for debugging
+    print(f"[QR Check] code={code}, msg={msg}, keys={list(result.keys())}")
+    
+    # 801=等待扫码, 802=已扫码待确认, 803=登录成功, 800=过期
     if code == 803:
+        # Login success - extract cookie from response
         cookie = result.get("cookie", "")
+        if not cookie:
+            # Try alternative cookie locations
+            if "data" in result and isinstance(result["data"], dict):
+                cookie = result["data"].get("cookie", "")
+        print(f"[QR Check] Raw cookie: {cookie[:50] if cookie else 'EMPTY'}...")
+        
         cookie = _parse_ncm_cookie(cookie)
+        print(f"[QR Check] Parsed cookie: {cookie[:50] if cookie else 'EMPTY'}...")
+        
+        if not cookie or "MUSIC_U" not in cookie:
+            return jsonify({"code": -1, "status": "error", 
+                          "msg": "登录成功但未获取到有效 Cookie，请尝试其他方式登录"})
 
         api = NetEaseAPI(cookie=cookie)
         downloader = Downloader(api)
@@ -716,8 +767,12 @@ def ncm_qr_check():
         return jsonify({"code": 200, "status": "scanned", "msg": "已扫码，请在手机上确认"})
     elif code == 801:
         return jsonify({"code": 200, "status": "waiting", "msg": "等待扫码"})
+    elif code == 800:
+        return jsonify({"code": 200, "status": "expired", "msg": "二维码已过期，请重新生成"})
     else:
-        return jsonify({"code": 200, "status": "expired", "msg": "二维码已过期"})
+        # Unknown code - treat as expired but include the actual message
+        return jsonify({"code": 200, "status": "expired", 
+                       "msg": f"二维码状态异常({code})，请重新生成"})
 
 @app.route("/api/admin/ncm/logout", methods=["POST"])
 @require_auth

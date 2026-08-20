@@ -170,17 +170,51 @@
     });
 
     $('ncmPhoneBtn').addEventListener('click', async () => {
-        const phone = $('ncmPhone').value.trim(), password = $('ncmPwd').value;
+        const phone = $('ncmPhone').value.trim(), password = $('ncmPwd').value, captcha = $('ncmCaptcha').value.trim();
         if (!phone) { showToast('请输入手机号', 'error'); return; }
-        if (!password) { showToast('请输入密码', 'error'); return; }
+        if (!password && !captcha) { showToast('请输入密码或验证码', 'error'); return; }
         $('ncmPhoneBtn').disabled = true;
         $('ncmPhoneBtn').textContent = '登录中...';
-        const r = await fetch(`${API}/api/admin/ncm/phone`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password})});
+        const r = await fetch(`${API}/api/admin/ncm/phone`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone,password,captcha})});
         const d = await r.json();
         showToast(d.msg, d.code===200?'success':'error');
-        if (d.code===200) { $('ncmPhone').value=''; $('ncmPwd').value=''; loadNcmStatus(); }
+        if (d.code===200) { $('ncmPhone').value=''; $('ncmPwd').value=''; $('ncmCaptcha').value=''; loadNcmStatus(); }
         $('ncmPhoneBtn').disabled = false;
         $('ncmPhoneBtn').textContent = '登录';
+    });
+
+    // SMS send button
+    let smsCooldown = 0;
+    $('ncmSmsBtn').addEventListener('click', async () => {
+        const phone = $('ncmPhone').value.trim();
+        if (!phone) { showToast('请先输入手机号', 'error'); return; }
+        if (phone.length !== 11 || !/^\d+$/.test(phone)) { showToast('请输入正确的11位手机号', 'error'); return; }
+        if (smsCooldown > 0) { showToast(`请等待 ${smsCooldown} 秒后重试`, 'error'); return; }
+        
+        $('ncmSmsBtn').disabled = true;
+        $('ncmSmsBtn').textContent = '发送中...';
+        const r = await fetch(`${API}/api/admin/ncm/sms/send`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone})});
+        const d = await r.json();
+        showToast(d.msg, d.code===200?'success':'error');
+        
+        if (d.code === 200) {
+            // Start cooldown (60 seconds)
+            smsCooldown = 60;
+            $('ncmSmsBtn').textContent = `${smsCooldown}s`;
+            const timer = setInterval(() => {
+                smsCooldown--;
+                if (smsCooldown <= 0) {
+                    clearInterval(timer);
+                    $('ncmSmsBtn').disabled = false;
+                    $('ncmSmsBtn').textContent = '发送验证码';
+                } else {
+                    $('ncmSmsBtn').textContent = `${smsCooldown}s`;
+                }
+            }, 1000);
+        } else {
+            $('ncmSmsBtn').disabled = false;
+            $('ncmSmsBtn').textContent = '发送验证码';
+        }
     });
 
     async function generateQR() {
@@ -219,7 +253,7 @@
                 }
                 if (cd.status === 'expired') {
                     clearInterval(qrCheckInterval);
-                    $('qrStatusText').textContent = '二维码已过期，请重新生成';
+                    $('qrStatusText').innerHTML = `<span style="color:var(--danger)">${escapeHtml(cd.msg)}</span>`;
                     container.innerHTML = '<button id="qrRetryBtn" class="btn-secondary">重新生成</button>';
                     $('qrRetryBtn').addEventListener('click', generateQR);
                 }
