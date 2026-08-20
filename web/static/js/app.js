@@ -207,35 +207,43 @@
             
             // Check if direct mode
             if (d.mode === 'direct') {
-                // Direct mode: download files one by one from CDN
+                // Direct mode: download files one by one to user's device
                 const songs = d.songs || [];
                 $('progressLog').innerHTML = songs.map(s=>`<div class="log-item">🎵 ${escapeHtml(s.name)} - ${escapeHtml(s.artist)}</div>`).join('');
-                $('progressText').textContent = '下载中...';
+                $('progressText').textContent = '正在下载到您的设备...';
                 
-                // Download each song directly
+                // Download each song using fetch + blob (works on mobile)
+                let successCount = 0;
                 for (let i = 0; i < songs.length; i++) {
                     const song = songs[i];
                     try {
                         $('progressCount').textContent = `${i+1}/${songs.length}`;
                         $('progressFill').style.width = Math.round((i+1)/songs.length*100)+'%';
                         
-                        // Trigger download
+                        // Fetch the file as blob, then trigger download
+                        const resp = await fetch(song.url);
+                        if (!resp.ok) throw new Error('下载失败');
+                        const blob = await resp.blob();
+                        const blobUrl = URL.createObjectURL(blob);
+                        
                         const a = document.createElement('a');
-                        a.href = song.url;
+                        a.href = blobUrl;
                         a.download = `${song.name} - ${song.artist}.mp3`;
-                        a.target = '_blank';
                         document.body.appendChild(a);
                         a.click();
                         a.remove();
                         
-                        // Add success log
+                        // Clean up blob URL after a short delay
+                        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+                        
+                        successCount++;
                         const div = document.createElement('div');
                         div.innerHTML = `<div class="log-item log-success" data-sid="${song.id}">✅ ${escapeHtml(song.name)}</div>`;
                         $('progressLog').appendChild(div.firstElementChild);
                         $('progressLog').scrollTop = $('progressLog').scrollHeight;
                         
-                        // Small delay between downloads to avoid browser blocking
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        // Delay between downloads
+                        await new Promise(resolve => setTimeout(resolve, 800));
                     } catch (err) {
                         const div = document.createElement('div');
                         div.innerHTML = `<div class="log-item log-error" data-sid="${song.id}">❌ ${escapeHtml(song.name)}: ${err.message}</div>`;
@@ -244,10 +252,10 @@
                     }
                 }
                 
-                $('progressText').textContent = `完成！成功下载 ${songs.length} 首`;
+                $('progressText').textContent = `完成！成功下载 ${successCount} 首到设备`;
                 startBatchBtn.disabled = false; 
                 startBatchBtn.textContent = '开始随机下载';
-                showToast(`批量下载完成：${songs.length} 首`, 'success');
+                showToast(`批量下载完成：${successCount} 首已保存到设备`, 'success');
             } else {
                 // Cache mode: poll for progress
                 const songs = d.songs||[];

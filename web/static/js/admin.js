@@ -782,6 +782,20 @@ class MusicHubAdmin {
             return;
         }
         
+        // Check against actual disk capacity
+        try {
+            const diskResponse = await fetch('/api/admin/system/disk');
+            const diskData = await diskResponse.json();
+            if (diskData.code === 200) {
+                if (storageLimit > diskData.total_gb) {
+                    this.showToast(`存储空间限制不能超过服务器总容量 ${diskData.total_gb} GB`, 'error');
+                    return;
+                }
+            }
+        } catch (e) {
+            // Continue even if disk check fails
+        }
+        
         const settings = {
             cache_downloads: document.getElementById('cacheMode').value === 'server',
             auto_cleanup_hours: parseInt(document.getElementById('cleanupHours').value) || 24,

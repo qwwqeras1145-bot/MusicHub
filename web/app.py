@@ -374,30 +374,8 @@ def admin_songs_cleanup():
     save_downloads(kept)
     return jsonify({"code": 200, "msg": f"已清理 {removed} 首过期歌曲"})
 
-# ==================== Admin: Settings ====================
-@app.route("/api/admin/settings")
-@require_auth
-def admin_settings():
-    cfg = load_config()
-    return jsonify({"code": 200, "settings": cfg["settings"]})
-
-@app.route("/api/admin/settings/update", methods=["POST"])
-@require_auth
-def admin_settings_update():
-    data = request.get_json() or {}
-    cfg = load_config()
-    if "cache_downloads" in data:
-        cfg["settings"]["cache_downloads"] = bool(data["cache_downloads"])
-    if "auto_cleanup_hours" in data:
-        cfg["settings"]["auto_cleanup_hours"] = int(data["auto_cleanup_hours"])
-    if "auto_cleanup_enabled" in data:
-        cfg["settings"]["auto_cleanup_enabled"] = bool(data["auto_cleanup_enabled"])
-    if "admin_path" in data:
-        path = data["admin_path"].strip()
-        if path and path.startswith("/"):
-            cfg["settings"]["admin_path"] = path
-    save_config(cfg)
-    return jsonify({"code": 200, "msg": "设置已保存"})
+# ==================== Admin: Settings (legacy) ====================
+# Settings routes moved to line ~1164 area, removed duplicates here
 
 # ==================== Admin: NCM Login ====================
 
