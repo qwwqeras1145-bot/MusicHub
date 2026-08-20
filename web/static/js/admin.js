@@ -183,26 +183,68 @@
         $('ncmPhoneBtn').textContent = '登录';
     });
 
-    $('qrGenBtn').addEventListener('click', async () => {
-        $('qrGenBtn').disabled = true;
-        $('qrGenBtn').textContent = '生成中...';
+    async function generateQR() {
+        const container = $('qrContainer');
+        container.innerHTML = '<div style="color:var(--text-muted);padding:40px">正在生成二维码...</div>';
         const r = await fetch(`${API}/api/admin/ncm/qr/create`);
         const d = await r.json();
-        if (d.code !== 200) { showToast('生成失败', 'error'); $('qrGenBtn').disabled=false; $('qrGenBtn').textContent='生成二维码'; return; }
-        $('qrContainer').innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(d.qr_url)}" alt="QR" class="qr-img" style="border-radius:8px;background:#fff;padding:8px">`;
+        if (d.code !== 200) { showToast('生成失败', 'error'); container.innerHTML = '<button id="qrRetryBtn" class="btn-secondary">重试</button>'; $('qrRetryBtn').addEventListener('click', generateQR); return; }
+
+        // Use self-rendered QR code (no third-party dependency)
+        container.innerHTML = `<div id="qrCodeBox" style="display:inline-block;padding:12px;background:#fff;border-radius:8px"></div>`;
+        renderQRCode($('qrCodeBox'), d.qr_url);
+
         $('qrStatusText').textContent = '等待扫码...';
         if (qrCheckInterval) clearInterval(qrCheckInterval);
+
+        let pollCount = 0;
+        const maxPolls = 90; // 3 minutes at 2s intervals
         qrCheckInterval = setInterval(async () => {
-            const cr = await fetch(`${API}/api/admin/ncm/qr/check?key=${d.key}`);
-            const cd = await cr.json();
-            $('qrStatusText').textContent = cd.msg;
-            if (cd.status === 'success') { clearInterval(qrCheckInterval); loadNcmStatus(); showToast('扫码登录成功', 'success'); }
-            if (cd.status === 'expired') {
+            pollCount++;
+            if (pollCount > maxPolls) {
                 clearInterval(qrCheckInterval);
-                $('qrContainer').innerHTML = '<p style="color:var(--danger)">二维码已过期，请重新生成</p>';
+                $('qrStatusText').textContent = '二维码已超时，请重新生成';
+                container.innerHTML = '<button id="qrRetryBtn" class="btn-secondary">重新生成</button>';
+                $('qrRetryBtn').addEventListener('click', generateQR);
+                return;
             }
+            try {
+                const cr = await fetch(`${API}/api/admin/ncm/qr/check?key=${d.key}`);
+                const cd = await cr.json();
+                $('qrStatusText').textContent = cd.msg;
+                if (cd.status === 'success') {
+                    clearInterval(qrCheckInterval);
+                    loadNcmStatus();
+                    showToast(`扫码登录成功${cd.username ? '：' + cd.username : ''}`, 'success');
+                }
+                if (cd.status === 'expired') {
+                    clearInterval(qrCheckInterval);
+                    $('qrStatusText').textContent = '二维码已过期，请重新生成';
+                    container.innerHTML = '<button id="qrRetryBtn" class="btn-secondary">重新生成</button>';
+                    $('qrRetryBtn').addEventListener('click', generateQR);
+                }
+            } catch {}
         }, 2000);
-    });
+    }
+
+    // Simple QR code renderer using canvas
+    function renderQRCode(container, data) {
+        // Use a lightweight QR library loaded from CDN
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js';
+        script.onload = () => {
+            const canvas = document.createElement('canvas');
+            container.appendChild(canvas);
+            QRCode.toCanvas(canvas, data, { width: 200, margin: 1, color: { dark: '#000', light: '#fff' } });
+        };
+        script.onerror = () => {
+            // Fallback to img tag with API
+            container.innerHTML = `<img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(data)}" alt="QR" style="width:200px;height:200px">`;
+        };
+        document.head.appendChild(script);
+    }
+
+    $('qrGenBtn').addEventListener('click', generateQR);
 
     // ==================== Songs ====================
     let selectedSongs = new Set();
