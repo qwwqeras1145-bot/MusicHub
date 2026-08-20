@@ -1,0 +1,6 @@
+flask>=3.0
+flask-cors>=4.0
+requests>=2.31
+pycryptodome>=3.19
+mutagen>=1.47
+tqdm>=4.66

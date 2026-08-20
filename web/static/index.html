@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MusicHub - 音乐下载中心</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎵</text></svg>">
+</head>
+<body>
+    <!-- 顶部导航 -->
+    <header class="header">
+        <div class="header-inner">
+            <div class="logo">
+                <span class="logo-icon">🎵</span>
+                <h1>MusicHub</h1>
+                <span class="version">v1.0</span>
+            </div>
+            <nav class="nav-tabs">
+                <button class="nav-tab active" data-tab="search">搜索</button>
+                <button class="nav-tab" data-tab="hot">热门榜单</button>
+                <button class="nav-tab" data-tab="download">批量下载</button>
+                <button class="nav-tab" data-tab="library">本地曲库</button>
+                <button class="nav-tab" data-tab="about">其他版本</button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="main-content">
+        <!-- 搜索页 -->
+        <section id="tab-search" class="tab-panel active">
+            <div class="search-box">
+                <div class="search-input-wrap">
+                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+                    </svg>
+                    <input type="text" id="searchInput" placeholder="搜索歌曲、歌手、专辑..."
+                           autocomplete="off" autofocus>
+                    <button id="searchBtn" class="search-btn">搜索</button>
+                </div>
+                <div id="searchSuggestions" class="suggestions hidden"></div>
+            </div>
+
+            <div id="searchResults" class="song-list">
+                <div class="empty-state">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                    </svg>
+                    <p>输入关键词开始搜索</p>
+                    <span>支持歌曲名、歌手名、专辑名</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 热门榜单页 -->
+        <section id="tab-hot" class="tab-panel">
+            <div class="hot-header">
+                <h2>热门榜单</h2>
+                <div class="hot-tabs">
+                    <button class="hot-tab active" data-list="3778678">热歌榜</button>
+                    <button class="hot-tab" data-list="3779629">新歌榜</button>
+                    <button class="hot-tab" data-list="2884035">原创榜</button>
+                </div>
+            </div>
+            <div id="hotList" class="song-list">
+                <div class="loading">加载中...</div>
+            </div>
+        </section>
+
+        <!-- 批量下载页 -->
+        <section id="tab-download" class="tab-panel">
+            <div class="batch-panel">
+                <h2>随机批量下载</h2>
+                <p class="desc">从热门榜单中随机下载歌曲，自定义下载数量</p>
+
+                <div class="batch-form">
+                    <div class="form-row">
+                        <label>下载数量</label>
+                        <div class="count-input">
+                            <button id="countMinus" class="count-btn">-</button>
+                            <input type="number" id="batchCount" value="5" min="1" max="200">
+                            <button id="countPlus" class="count-btn">+</button>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label>音质选择</label>
+                        <select id="batchQuality">
+                            <option value="standard">标准 (128kbps)</option>
+                            <option value="exhigh" selected>高音质 (320kbps)</option>
+                            <option value="lossless">无损 (FLAC)</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label>快捷选择</label>
+                        <div class="quick-counts">
+                            <button data-count="5">5首</button>
+                            <button data-count="10">10首</button>
+                            <button data-count="20">20首</button>
+                            <button data-count="50">50首</button>
+                            <button data-count="100">100首</button>
+                        </div>
+                    </div>
+                    <button id="startBatchDownload" class="btn-primary btn-large">
+                        开始随机下载
+                    </button>
+                </div>
+
+                <div id="batchProgress" class="batch-progress hidden">
+                    <div class="progress-header">
+                        <span id="progressText">准备中...</span>
+                        <span id="progressCount">0/0</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="progressFill" class="progress-fill"></div>
+                    </div>
+                    <div id="progressLog" class="progress-log"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 本地曲库页 -->
+        <section id="tab-library" class="tab-panel">
+            <div class="library-panel">
+                <h2>本地曲库</h2>
+                <div id="libraryStats" class="library-stats">
+                    <div class="stat-card">
+                        <span class="stat-value" id="libCount">-</span>
+                        <span class="stat-label">已下载歌曲</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="libSize">-</span>
+                        <span class="stat-label">占用空间</span>
+                    </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="libPath">-</span>
+                        <span class="stat-label">下载目录</span>
+                    </div>
+                </div>
+                <button id="refreshLibrary" class="btn-secondary">刷新统计</button>
+            </div>
+        </section>
+
+        <!-- 其他版本页 -->
+        <section id="tab-about" class="tab-panel">
+            <div class="about-panel">
+                <h2>MusicHub 全平台下载</h2>
+                <p class="desc">MusicHub 支持多个平台，选择适合你的版本</p>
+
+                <div class="platform-grid">
+                    <div class="platform-card">
+                        <div class="platform-icon">🌐</div>
+                        <h3>网页版 (当前)</h3>
+                        <p>在线搜索、播放、下载，无需安装</p>
+                        <span class="platform-tag">当前使用</span>
+                    </div>
+
+                    <div class="platform-card">
+                        <div class="platform-icon">🪟</div>
+                        <h3>Windows 桌面版</h3>
+                        <p>双击运行 EXE，自带网页界面，独立使用</p>
+                        <a href="#" class="btn-download" id="dlWindows">下载 EXE</a>
+                    </div>
+
+                    <div class="platform-card">
+                        <div class="platform-icon">🍎</div>
+                        <h3>macOS 版</h3>
+                        <p>原生支持 Apple Silicon 和 Intel</p>
+                        <a href="#" class="btn-download" id="dlMac">下载 DMG</a>
+                    </div>
+
+                    <div class="platform-card">
+                        <div class="platform-icon">🐧</div>
+                        <h3>Linux 图形版</h3>
+                        <p>支持 Ubuntu/Debian/Fedora，带 GUI</p>
+                        <a href="#" class="btn-download" id="dlLinuxGUI">下载 AppImage</a>
+                    </div>
+
+                    <div class="platform-card">
+                        <div class="platform-icon">💻</div>
+                        <h3>Linux 命令行版</h3>
+                        <p>纯 CLI，适合终端用户和服务器</p>
+                        <a href="#" class="btn-download" id="dlLinuxCLI">下载 CLI</a>
+                    </div>
+
+                    <div class="platform-card">
+                        <div class="platform-icon">🤖</div>
+                        <h3>Android 手机版</h3>
+                        <p>原生 Android App，支持后台播放</p>
+                        <a href="#" class="btn-download" id="dlAndroid">下载 APK</a>
+                    </div>
+
+                    <div class="platform-card">
+                        <div class="platform-icon">🤖</div>
+                        <h3>AstrBot 插件</h3>
+                        <p>接入 AstrBot，在 QQ/微信中使用</p>
+                        <a href="#" class="btn-download" id="dlAstrBot">查看安装指南</a>
+                    </div>
+
+                    <div class="platform-card">
+                        <div class="platform-icon">🔌</div>
+                        <h3>NoneBot 插件</h3>
+                        <p>支持 NoneBot2/Lagrange/LLOneBot 等</p>
+                        <a href="#" class="btn-download" id="dlNoneBot">查看安装指南</a>
+                    </div>
+
+                    <div class="platform-card">
+                        <div class="platform-icon">📱</div>
+                        <h3>Linna 版本</h3>
+                        <p>适配 Linna 框架的插件版本</p>
+                        <a href="#" class="btn-download" id="dlLinna">查看安装指南</a>
+                    </div>
+                </div>
+
+                <div class="about-info">
+                    <h3>项目信息</h3>
+                    <ul>
+                        <li>开源协议: MIT License</li>
+                        <li>GitHub: <a href="https://github.com" target="_blank">MusicHub (即将发布)</a></li>
+                        <li>技术栈: Python + Flask + 原生 JS</li>
+                        <li>参考项目: <a href="https://github.com/XiaoMengXinX/Music163bot-Go" target="_blank">Music163bot-Go</a></li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 底部播放器 -->
+    <footer class="player" id="player">
+        <div class="player-info">
+            <div class="player-cover" id="playerCover">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                    <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                </svg>
+            </div>
+            <div class="player-meta">
+                <span class="player-title" id="playerTitle">未在播放</span>
+                <span class="player-artist" id="playerArtist">-</span>
+            </div>
+        </div>
+        <div class="player-controls">
+            <button class="ctrl-btn" id="prevBtn" title="上一首">⏮</button>
+            <button class="ctrl-btn play-btn" id="playBtn" title="播放">▶</button>
+            <button class="ctrl-btn" id="nextBtn" title="下一首">⏭</button>
+        </div>
+        <div class="player-progress">
+            <span id="currentTime">0:00</span>
+            <div class="progress-track" id="progressTrack">
+                <div class="progress-current" id="progressCurrent"></div>
+            </div>
+            <span id="totalTime">0:00</span>
+        </div>
+        <div class="player-volume">
+            <button class="ctrl-btn" id="volumeBtn">🔊</button>
+            <input type="range" id="volumeSlider" min="0" max="100" value="80"
+                   class="volume-slider">
+        </div>
+        <audio id="audioPlayer" preload="auto"></audio>
+    </footer>
+
+    <script src="/js/player.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>
