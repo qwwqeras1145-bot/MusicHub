@@ -217,6 +217,80 @@ select { background: var(--bg-secondary); border: 1px solid var(--border); color
 /* Install hint text */
 .install-hint { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
 
+/* ==================== Login Page ==================== */
+.login-page {
+    position: fixed; inset: 0; z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-primary);
+}
+.login-page.hidden { display: none; }
+.login-box {
+    width: 90%; max-width: 400px;
+    background: var(--bg-secondary); border-radius: var(--radius-lg);
+    padding: 40px 32px; box-shadow: var(--shadow);
+}
+.login-logo { text-align: center; margin-bottom: 32px; }
+.logo-icon-big { font-size: 48px; display: block; margin-bottom: 8px; }
+.login-logo h1 { font-size: 28px; font-weight: 700; background: linear-gradient(135deg, var(--accent), #4ecdc4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.login-subtitle { color: var(--text-muted); font-size: 14px; margin-top: 4px; }
+.login-error { color: var(--danger); font-size: 13px; text-align: center; margin-bottom: 12px; padding: 8px; background: rgba(231,76,60,0.1); border-radius: var(--radius); }
+.login-error.hidden { display: none; }
+
+/* ==================== Admin Sub-tabs ==================== */
+.admin-sub-tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 8px; flex-wrap: wrap; }
+.admin-sub-tab { background: none; border: none; color: var(--text-secondary); padding: 10px 16px; font-size: 14px; cursor: pointer; border-radius: var(--radius) var(--radius) 0 0; transition: var(--transition); }
+.admin-sub-tab:hover { color: var(--text-primary); background: var(--bg-hover); }
+.admin-sub-tab.active { color: var(--accent); border-bottom: 2px solid var(--accent); }
+.admin-sub-panel { display: none; }
+.admin-sub-panel.active { display: block; animation: fadeIn 0.3s ease; }
+
+/* ==================== Toggle Switch ==================== */
+.toggle { position: relative; display: inline-block; width: 48px; height: 26px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; inset: 0; background: var(--bg-tertiary); border-radius: 26px; cursor: pointer; transition: var(--transition); border: 1px solid var(--border); }
+.toggle-slider::before { content: ''; position: absolute; width: 20px; height: 20px; left: 2px; bottom: 2px; background: var(--text-secondary); border-radius: 50%; transition: var(--transition); }
+.toggle input:checked + .toggle-slider { background: var(--accent); border-color: var(--accent); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(22px); background: #fff; }
+
+/* ==================== Settings ==================== */
+.settings-group { display: flex; flex-direction: column; gap: 20px; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 0; border-bottom: 1px solid var(--bg-tertiary); }
+.setting-row:last-child { border-bottom: none; }
+.setting-row div { flex: 1; }
+.setting-row strong { display: block; margin-bottom: 4px; }
+.setting-row p { font-size: 13px; color: var(--text-secondary); margin: 0; }
+
+/* ==================== QR Code ==================== */
+.qr-section { text-align: center; padding: 20px 0; }
+.qr-container { display: flex; align-items: center; justify-content: center; min-height: 200px; }
+.qr-img { border-radius: var(--radius); background: #fff; padding: 8px; }
+.qr-hint { color: var(--text-secondary); font-size: 13px; margin-top: 12px; }
+
+/* ==================== Cookie Help ==================== */
+.cookie-help { margin-top: 16px; padding: 12px; background: var(--bg-tertiary); border-radius: var(--radius); font-size: 12px; color: var(--text-secondary); }
+.cookie-help p { margin-bottom: 8px; }
+.cookie-help ol { padding-left: 20px; }
+.cookie-help li { margin-bottom: 4px; }
+.cookie-help a { color: var(--accent); }
+
+/* ==================== Song Management Table ==================== */
+.admin-table table { width: 100%; border-collapse: collapse; }
+.admin-table th, .admin-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--bg-tertiary); font-size: 13px; }
+.admin-table th { color: var(--text-secondary); font-weight: 500; background: var(--bg-tertiary); }
+.admin-table input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+
+/* ==================== Buttons ==================== */
+.btn-danger { background: var(--danger); color: #fff; border: none; padding: 8px 16px; border-radius: var(--radius); font-size: 13px; cursor: pointer; transition: var(--transition); }
+.btn-danger:hover { opacity: 0.85; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+/* ==================== Spinner ==================== */
+.spin { animation: spinAnim 1s linear infinite; }
+@keyframes spinAnim { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ==================== Admin Stats ==================== */
+.admin-stats { display: flex; flex-direction: column; gap: 8px; }
+
 /* SVG icons in action buttons */
 .action-btn svg { display: block; }
 .action-btn.disabled svg { opacity: 0.3; }
