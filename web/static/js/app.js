@@ -223,8 +223,12 @@
                 </div>
                 <span class="song-duration">${formatDuration(song.duration)}</span>
                 <div class="song-actions">
-                    <button class="action-btn play-action" title="播放" data-id="${song.id}" data-index="${i}">▶</button>
-                    <button class="action-btn download-action ${!playable ? 'disabled' : ''}" title="${playable ? '下载' : reason}" data-id="${song.id}" data-name="${escapeHtml(song.name)}" data-playable="${playable}">⬇</button>
+                    <button class="action-btn play-action" title="播放" data-id="${song.id}" data-index="${i}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    </button>
+                    <button class="action-btn download-action ${!playable ? 'disabled' : ''}" title="${playable ? '下载' : reason}" data-id="${song.id}" data-name="${escapeHtml(song.name)}" data-playable="${playable}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+                    </button>
                 </div>
             </div>`;
         }).join('');
@@ -367,7 +371,10 @@
     // ==================== Single Download ====================
     async function downloadSong(songId, songName, btn) {
         btn.classList.add('downloading');
-        btn.textContent = '⏳';
+        const dlIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>';
+        const checkIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+        const clockIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.2 3.2.8-1.3-4.5-2.7V7z"/></svg>';
+        btn.innerHTML = clockIcon;
         try {
             const resp = await fetch(`/api/download/song?id=${songId}&quality=exhigh`);
             const contentType = resp.headers.get('content-type') || '';
@@ -386,12 +393,13 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             btn.classList.remove('downloading');
-            btn.textContent = '✅';
+            btn.innerHTML = checkIcon;
+            btn.style.color = '#1db954';
             showToast(`${songName} 下载完成`, 'success');
-            setTimeout(() => { btn.textContent = '⬇'; }, 2000);
+            setTimeout(() => { btn.innerHTML = dlIcon; btn.style.color = ''; }, 2000);
         } catch (err) {
             btn.classList.remove('downloading');
-            btn.textContent = '⬇';
+            btn.innerHTML = dlIcon;
             showToast('下载失败: ' + err.message, 'error');
         }
     }
