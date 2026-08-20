@@ -149,17 +149,17 @@ jobs:
 
       - name: Create source package
         run: |
-          cd ${{ github.workspace }}
           tar czf MusicHub-source.tar.gz \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='dist' \
-            --exclude='build' \
-            --exclude='__pycache__' \
+            --exclude='./.git' \
+            --exclude='./.github' \
+            --exclude='./dist' \
+            --exclude='./build' \
+            --exclude='./__pycache__' \
             --exclude='*.pyc' \
-            --exclude='venv' \
+            --exclude='./venv' \
             --exclude='*.spec' \
-            .
+            -C ${{ github.workspace }} .
+          ls -lh MusicHub-source.tar.gz
 
       - name: Create Release and Upload
         if: startsWith(github.ref, 'refs/tags/')
