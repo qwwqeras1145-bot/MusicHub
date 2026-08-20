@@ -526,12 +526,15 @@ def ncm_status():
                 ncm["avatar"] = result["avatar"]
                 ncm["last_check"] = result["last_check"]
                 save_config(cfg)
-        except Exception:
+            else:
+                # API returned error, mark as expired
+                result["cookie_expired"] = True
+                ncm["cookie_expired"] = True
+                save_config(cfg)
+        except Exception as e:
+            import sys
+            print(f"[NCM Status] Error checking login status: {e}", file=sys.stderr)
             pass
-        else:
-            result["cookie_expired"] = True
-            ncm["cookie_expired"] = True
-            save_config(cfg)
 
     return jsonify(result)
 
@@ -547,6 +550,31 @@ def ncm_validate():
     # If no cookie but logged_in is True, something's wrong
     if not cookie:
         if ncm.get("logged_in"):
+            # Try to use the global API instance which might still have the session
+            try:
+                status = api.get_login_status()
+                if status.get("code") == 200 and status.get("profile"):
+                    profile = status["profile"]
+                    ncm["username"] = profile.get("nickname", "未知")
+                    ncm["user_id"] = profile.get("userId", 0)
+                    ncm["vip"] = profile.get("vipType", 0) > 0
+                    ncm["avatar"] = profile.get("avatarUrl", "")
+                    ncm["cookie_expired"] = False
+                    ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    cfg["ncm"] = ncm
+                    save_config(cfg)
+                    return jsonify({
+                        "code": 200, "msg": "Cookie 有效",
+                        "valid": True,
+                        "username": ncm["username"],
+                        "user_id": ncm["user_id"],
+                        "vip": ncm["vip"],
+                        "avatar": ncm["avatar"],
+                    })
+            except Exception as e:
+                import sys
+                print(f"[NCM Validate] Error using global API: {e}", file=sys.stderr)
+                pass
             return jsonify({"code": -1, "msg": "Cookie 数据丢失，请重新登录"})
         return jsonify({"code": -1, "msg": "未登录网易云"})
     
@@ -659,11 +687,30 @@ def ncm_phone_login():
 
     if result.get("code") == 200:
         profile = result.get("profile", {})
+        # Extract cookie from multiple possible locations
         raw_cookie = result.get("cookie", "")
+        if not raw_cookie and "data" in result:
+            raw_cookie = result["data"].get("cookie", "") if isinstance(result["data"], dict) else ""
+        if not raw_cookie:
+            # Try to extract from Set-Cookie header or other fields
+            raw_cookie = result.get("MUSIC_U", "")
+            if raw_cookie:
+                raw_cookie = f"MUSIC_U={raw_cookie}"
+        
         # Debug: log what we got from the API
         import sys
+        print(f"[NCM Phone Login] Full result keys: {list(result.keys())}", file=sys.stderr)
         print(f"[NCM Phone Login] Raw cookie from API: {raw_cookie[:100] if raw_cookie else 'EMPTY'}...", file=sys.stderr)
-        cookie = _parse_ncm_cookie(raw_cookie)
+        
+        # If still no cookie, try to use the session cookies from the API instance
+        if not raw_cookie:
+            # The API session might have cookies set
+            session_cookies = dict(api.session.cookies)
+            if session_cookies:
+                raw_cookie = "; ".join(f"{k}={v}" for k, v in session_cookies.items())
+                print(f"[NCM Phone Login] Extracted from session cookies: {raw_cookie[:100]}...", file=sys.stderr)
+        
+        cookie = _parse_ncm_cookie(raw_cookie) if raw_cookie else ""
         print(f"[NCM Phone Login] Parsed cookie: {cookie[:100] if cookie else 'EMPTY'}...", file=sys.stderr)
         
         # If parsing returned empty, use raw cookie as-is
@@ -671,8 +718,29 @@ def ncm_phone_login():
             cookie = raw_cookie
             print(f"[NCM Phone Login] Using raw cookie as fallback", file=sys.stderr)
         
-        api = NetEaseAPI(cookie=cookie)
-        downloader = Downloader(api)
+        # If still no cookie, extract from the response more aggressively
+        if not cookie:
+            # Look for MUSIC_U in the entire response
+            import json as json_lib
+            result_str = json_lib.dumps(result)
+            if "MUSIC_U" in result_str:
+                # Found it somewhere in the response
+                print(f"[NCM Phone Login] Found MUSIC_U in response but couldn't extract it", file=sys.stderr)
+                # Try to use the token field
+                token = result.get("token", "")
+                if token:
+                    cookie = f"MUSIC_U={token}"
+                    print(f"[NCM Phone Login] Using token field as cookie: {cookie[:50]}...", file=sys.stderr)
+        
+        # Create new API instance with cookie
+        if cookie:
+            api = NetEaseAPI(cookie=cookie)
+            downloader = Downloader(api)
+        else:
+            print(f"[NCM Phone Login] WARNING: No cookie found in login response!", file=sys.stderr)
+            # Still create API with empty cookie to maintain session
+            api = NetEaseAPI()
+            downloader = Downloader(api)
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cfg = load_config()
@@ -689,6 +757,12 @@ def ncm_phone_login():
             "last_check": now,
         }
         save_config(cfg)
+        
+        # Verify save was successful
+        cfg_check = load_config()
+        saved_cookie = cfg_check.get("ncm", {}).get("cookie", "")
+        print(f"[NCM Phone Login] Saved cookie to config: {saved_cookie[:100] if saved_cookie else 'EMPTY'}...", file=sys.stderr)
+        
         return jsonify({
             "code": 200,
             "msg": "登录成功",
