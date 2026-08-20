@@ -46,7 +46,8 @@ def load_config():
         "settings": {
             "cache_downloads": True,
             "auto_cleanup_hours": 24,
-            "auto_cleanup_enabled": True
+            "auto_cleanup_enabled": True,
+            "admin_path": "/aimdrd"
         },
         "ncm": {
             "cookie": "",
@@ -390,6 +391,10 @@ def admin_settings_update():
         cfg["settings"]["auto_cleanup_hours"] = int(data["auto_cleanup_hours"])
     if "auto_cleanup_enabled" in data:
         cfg["settings"]["auto_cleanup_enabled"] = bool(data["auto_cleanup_enabled"])
+    if "admin_path" in data:
+        path = data["admin_path"].strip()
+        if path and path.startswith("/"):
+            cfg["settings"]["admin_path"] = path
     save_config(cfg)
     return jsonify({"code": 200, "msg": "设置已保存"})
 
@@ -513,7 +518,30 @@ def ncm_logout():
 # ==================== Static Files ====================
 @app.route("/")
 def index():
+    """Main page - accessible to everyone without login"""
     return send_from_directory("static", "index.html")
+
+@app.route("/admin")
+def admin_page_route():
+    """Admin page redirect - check if path matches configured admin path"""
+    cfg = load_config()
+    admin_path = cfg.get("settings", {}).get("admin_path", "/aimdrd")
+    # If accessing /admin directly, redirect to configured path
+    return redirect(admin_path)
+
+# Dynamic admin path route
+def admin_path_handler(path=""):
+    """Handler for the secret admin path"""
+    return send_from_directory("static", "admin.html")
+
+# Register the admin path route dynamically on startup
+@app.before_request
+def check_admin_path():
+    """Register dynamic admin path route"""
+    cfg = load_config()
+    admin_path = cfg.get("settings", {}).get("admin_path", "/aimdrd").lstrip("/")
+    if request.path == "/" + admin_path or request.path.startswith("/" + admin_path + "/"):
+        return send_from_directory("static", "admin.html")
 
 # ==================== Search API ====================
 @app.route("/api/search")

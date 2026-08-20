@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MusicHub - 管理后台</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚙</text></svg>">
+</head>
+<body>
+    <!-- ========== 管理员登录页 ========== -->
+    <div id="loginPage" class="login-page">
+        <div class="login-box">
+            <div class="login-logo">
+                <span class="logo-icon-big">⚙</span>
+                <h1>MusicHub</h1>
+                <p class="login-subtitle">管理后台</p>
+            </div>
+            <form id="loginForm" class="login-form" autocomplete="off">
+                <div class="form-group">
+                    <label>管理员账号</label>
+                    <input type="text" id="loginUsername" placeholder="用户名" autocomplete="username" autofocus>
+                </div>
+                <div class="form-group">
+                    <label>密码</label>
+                    <input type="password" id="loginPassword" placeholder="密码" autocomplete="current-password">
+                </div>
+                <div id="loginError" class="login-error hidden"></div>
+                <button type="submit" class="btn-primary btn-full" id="loginSubmitBtn">登 录</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========== 管理后台主界面 ========== -->
+    <div id="mainApp" class="hidden">
+        <header class="header">
+            <div class="header-inner">
+                <div class="logo">
+                    <span class="logo-icon">⚙</span>
+                    <h1>MusicHub 管理后台</h1>
+                </div>
+                <div class="header-user">
+                    <span id="userInfo" class="user-info"></span>
+                    <a href="/" class="btn-small">返回主页</a>
+                    <button id="logoutBtn" class="btn-small">退出</button>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="admin-panel">
+                <div class="admin-sub-tabs">
+                    <button class="admin-sub-tab active" data-panel="dashboard">仪表盘</button>
+                    <button class="admin-sub-tab" data-panel="ncm">网易云登录</button>
+                    <button class="admin-sub-tab" data-panel="songs">歌曲管理</button>
+                    <button class="admin-sub-tab" data-panel="accounts">账户管理</button>
+                    <button class="admin-sub-tab" data-panel="settings">系统设置</button>
+                </div>
+
+                <!-- 仪表盘 -->
+                <div id="admin-dashboard" class="admin-sub-panel active">
+                    <div class="admin-header"><h2>系统概览</h2><button id="refreshDashboard" class="btn-secondary">刷新</button></div>
+                    <div class="admin-grid">
+                        <div class="admin-card"><h3>服务器状态</h3><div id="serverStats" class="admin-stats"><div class="loading">加载中...</div></div></div>
+                        <div class="admin-card"><h3>下载统计</h3><div id="dlStats" class="admin-stats"><div class="loading">加载中...</div></div></div>
+                    </div>
+                </div>
+
+                <!-- 网易云登录 -->
+                <div id="admin-ncm" class="admin-sub-panel">
+                    <div class="admin-header"><h2>网易云音乐</h2></div>
+                    <div id="ncmStatusCard" class="admin-card full-width">
+                        <div id="ncmCurrentStatus"><div class="loading">加载中...</div></div>
+                    </div>
+                    <div class="admin-grid" style="margin-top:16px">
+                        <div class="admin-card">
+                            <h3>Cookie 登录</h3>
+                            <div class="form-group"><input type="text" id="ncmCookieInput" placeholder="粘贴 MUSIC_U 值" class="admin-input"></div>
+                            <button id="ncmCookieBtn" class="btn-primary">登录</button>
+                            <div class="cookie-help">
+                                <p><strong>获取 Cookie 步骤：</strong></p>
+                                <ol>
+                                    <li>浏览器打开 <a href="https://music.163.com" target="_blank">music.163.com</a> 并登录</li>
+                                    <li>按 F12 打开开发者工具</li>
+                                    <li>切换到 <strong>Application</strong> 标签</li>
+                                    <li>左侧 Cookies → music.163.com</li>
+                                    <li>找到 <strong>MUSIC_U</strong> 复制值</li>
+                                </ol>
+                            </div>
+                        </div>
+                        <div class="admin-card">
+                            <h3>手机号登录</h3>
+                            <div class="form-group"><input type="tel" id="ncmPhone" placeholder="手机号" class="admin-input"></div>
+                            <div class="form-group"><input type="password" id="ncmPwd" placeholder="密码" class="admin-input"></div>
+                            <button id="ncmPhoneBtn" class="btn-primary">登录</button>
+                        </div>
+                    </div>
+                    <div class="admin-card full-width" style="margin-top:16px">
+                        <h3>扫码登录</h3>
+                        <div class="qr-section">
+                            <div id="qrContainer" class="qr-container">
+                                <button id="qrGenBtn" class="btn-secondary">生成二维码</button>
+                            </div>
+                            <p id="qrStatusText" class="qr-hint">点击生成二维码，用网易云 App 扫码</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 歌曲管理 -->
+                <div id="admin-songs" class="admin-sub-panel">
+                    <div class="admin-header">
+                        <h2>歌曲管理</h2>
+                        <div>
+                            <button id="cleanupBtn" class="btn-secondary">清理过期</button>
+                            <button id="refreshSongs" class="btn-secondary">刷新</button>
+                            <button id="deleteSelectedBtn" class="btn-danger">删除选中</button>
+                        </div>
+                    </div>
+                    <div id="songListAdmin" class="admin-table"><div class="loading">加载中...</div></div>
+                </div>
+
+                <!-- 账户管理 -->
+                <div id="admin-accounts" class="admin-sub-panel">
+                    <div class="admin-header"><h2>账户管理</h2></div>
+                    <div class="admin-grid">
+                        <div class="admin-card">
+                            <h3>修改密码</h3>
+                            <div class="form-group"><input type="password" id="oldPwd" placeholder="当前密码" class="admin-input"></div>
+                            <div class="form-group"><input type="password" id="newPwd" placeholder="新密码 (至少6位)" class="admin-input"></div>
+                            <button id="changePwdBtn" class="btn-primary">修改密码</button>
+                        </div>
+                        <div class="admin-card">
+                            <h3>修改用户名</h3>
+                            <div class="form-group"><input type="text" id="newUsername" placeholder="新用户名" class="admin-input"></div>
+                            <div class="form-group"><input type="password" id="confirmPwdForName" placeholder="确认密码" class="admin-input"></div>
+                            <button id="changeNameBtn" class="btn-primary">修改用户名</button>
+                        </div>
+                    </div>
+                    <div class="admin-card full-width" style="margin-top:16px">
+                        <h3>新建管理员</h3>
+                        <div style="display:flex;gap:12px;flex-wrap:wrap">
+                            <input type="text" id="newAdminUser" placeholder="用户名" class="admin-input" style="flex:1;min-width:150px">
+                            <input type="password" id="newAdminPwd" placeholder="密码 (至少6位)" class="admin-input" style="flex:1;min-width:150px">
+                            <button id="createAdminBtn" class="btn-primary" style="flex-shrink:0">创建</button>
+                        </div>
+                    </div>
+                    <div class="admin-card full-width" style="margin-top:16px">
+                        <h3>管理员列表</h3>
+                        <div id="adminListTable" class="admin-table"><div class="loading">加载中...</div></div>
+                    </div>
+                </div>
+
+                <!-- 系统设置 -->
+                <div id="admin-settings" class="admin-sub-panel">
+                    <div class="admin-header"><h2>系统设置</h2><button id="saveSettingsBtn" class="btn-primary">保存</button></div>
+                    <div class="admin-card full-width">
+                        <div class="settings-group">
+                            <div class="setting-row">
+                                <div><strong>服务器缓存下载</strong><p>开启：歌曲先下载到服务器再转给用户。关闭：用户直接从网易云下载。</p></div>
+                                <label class="toggle"><input type="checkbox" id="settingCache" checked><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="setting-row">
+                                <div><strong>自动清理</strong><p>自动删除超过指定时间的下载文件</p></div>
+                                <label class="toggle"><input type="checkbox" id="settingAutoClean" checked><span class="toggle-slider"></span></label>
+                            </div>
+                            <div class="setting-row">
+                                <div><strong>清理周期 (小时)</strong><p>超过此时长的文件将被自动清理</p></div>
+                                <input type="number" id="settingCleanHours" value="24" min="1" max="720" class="admin-input" style="width:80px">
+                            </div>
+                            <div class="setting-row">
+                                <div><strong>管理后台路径</strong><p>访问此路径才能看到管理后台登录页，修改后请牢记</p></div>
+                                <input type="text" id="settingAdminPath" value="/aimdrd" class="admin-input" style="width:150px">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/js/admin.js"></script>
+</body>
+</html>
