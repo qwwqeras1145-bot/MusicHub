@@ -403,31 +403,36 @@ def admin_settings_update():
 def _parse_ncm_cookie(raw_cookie: str) -> str:
     """Parse and normalize NCM cookie string.
     Accepts: raw MUSIC_U value, or full cookie string with MUSIC_U and __csrf.
-    Returns: normalized cookie string with MUSIC_U and __csrf.
+    Returns: normalized cookie string. If can't parse, returns raw string as-is.
     """
     if not raw_cookie:
         return ""
     raw_cookie = raw_cookie.strip()
-    # If it looks like just a token value (no = sign)
+    # If it looks like just a token value (no = sign), treat as MUSIC_U
     if "=" not in raw_cookie:
         return f"MUSIC_U={raw_cookie}"
-    # Extract MUSIC_U and __csrf from full cookie string
+    # Try to extract MUSIC_U and __csrf from full cookie string
     parts = {}
     for item in raw_cookie.split(";"):
         item = item.strip()
         if "=" in item:
             k, v = item.split("=", 1)
-            k = k.strip().lower()
-            if k in ("music_u",):
+            k_lower = k.strip().lower()
+            if k_lower == "music_u":
                 parts["MUSIC_U"] = v.strip()
-            elif k in ("__csrf", "_csrf", "csrf"):
+            elif k_lower in ("__csrf", "_csrf", "csrf"):
                 parts["__csrf"] = v.strip()
+            # Also keep other useful cookies
+            elif k_lower in ("ntes_kaola_ad", "nmtid", "wnmcid", "os", "appver"):
+                parts[k.strip()] = v.strip()
     if "MUSIC_U" in parts:
         result = f"MUSIC_U={parts['MUSIC_U']}"
-        if "__csrf" in parts:
-            result += f"; __csrf={parts['__csrf']}"
+        for k, v in parts.items():
+            if k != "MUSIC_U":
+                result += f"; {k}={v}"
         return result
-    # Fallback: use as-is
+    # If no MUSIC_U found, return the raw cookie string as-is
+    # (the API might use different cookie names, or it's already a valid cookie)
     return raw_cookie
 
 def _mask_cookie(cookie_str: str) -> str:
@@ -552,8 +557,13 @@ def ncm_validate():
     cfg = load_config()
     ncm = cfg.get("ncm", {})
     cookie = ncm.get("cookie", "")
+    
+    # If no cookie but logged_in is True, something's wrong
     if not cookie:
+        if ncm.get("logged_in"):
+            return jsonify({"code": -1, "msg": "Cookie 数据丢失，请重新登录"})
         return jsonify({"code": -1, "msg": "未登录网易云"})
+    
     result = _validate_ncm_cookie(cookie)
     if result["valid"]:
         ncm["username"] = result["username"]
@@ -566,6 +576,7 @@ def ncm_validate():
         save_config(cfg)
         return jsonify({"code": 200, "msg": "Cookie 有效", **result})
     else:
+        # Cookie invalid, but don't clear logged_in yet - let user decide
         ncm["cookie_expired"] = True
         ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cfg["ncm"] = ncm
@@ -639,9 +650,18 @@ def ncm_phone_login():
 
     if result.get("code") == 200:
         profile = result.get("profile", {})
-        cookie = result.get("cookie", "")
-        cookie = _parse_ncm_cookie(cookie)
-
+        raw_cookie = result.get("cookie", "")
+        # Debug: log what we got from the API
+        import sys
+        print(f"[NCM Phone Login] Raw cookie from API: {raw_cookie[:100] if raw_cookie else 'EMPTY'}...", file=sys.stderr)
+        cookie = _parse_ncm_cookie(raw_cookie)
+        print(f"[NCM Phone Login] Parsed cookie: {cookie[:100] if cookie else 'EMPTY'}...", file=sys.stderr)
+        
+        # If parsing returned empty, use raw cookie as-is
+        if not cookie and raw_cookie:
+            cookie = raw_cookie
+            print(f"[NCM Phone Login] Using raw cookie as fallback", file=sys.stderr)
+        
         api = NetEaseAPI(cookie=cookie)
         downloader = Downloader(api)
 
