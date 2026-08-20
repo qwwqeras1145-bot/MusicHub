@@ -13,6 +13,7 @@ class MusicHubAdmin {
     }
 
     init() {
+        this.setupAdminLogin();
         this.setupNavigation();
         this.setupLoginMethods();
         this.setupDashboard();
@@ -22,8 +23,70 @@ class MusicHubAdmin {
         this.setupSettings();
         this.setupLogout();
         
-        // Load initial data
-        this.loadDashboardData();
+        // Check if already logged in
+        this.checkAuth();
+    }
+
+    async checkAuth() {
+        try {
+            const r = await fetch(`${API}/api/auth/status`);
+            const d = await r.json();
+            if (d.logged_in) {
+                this.currentUser = d.username;
+                document.getElementById('loginPage').classList.add('hidden');
+                document.getElementById('mainApp').classList.remove('hidden');
+                document.getElementById('userInfo').textContent = d.username;
+                this.loadDashboardData();
+            }
+        } catch (e) {
+            // Not logged in, show login page (already visible by default)
+        }
+    }
+
+    // ==================== Admin Login ====================
+    setupAdminLogin() {
+        const form = document.getElementById('loginForm');
+        const btn = document.getElementById('loginSubmitBtn');
+        const errorEl = document.getElementById('loginError');
+        
+        if (form) {
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const username = document.getElementById('loginUsername').value.trim();
+                const password = document.getElementById('loginPassword').value;
+                
+                btn.disabled = true;
+                btn.textContent = '登录中...';
+                errorEl.classList.add('hidden');
+                
+                try {
+                    const r = await fetch(`${API}/api/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+                    const d = await r.json();
+                    
+                    if (d.code === 200) {
+                        // Login successful, show main app
+                        this.currentUser = d.username;
+                        document.getElementById('loginPage').classList.add('hidden');
+                        document.getElementById('mainApp').classList.remove('hidden');
+                        document.getElementById('userInfo').textContent = d.username;
+                        this.loadDashboardData();
+                    } else {
+                        errorEl.textContent = d.msg || '登录失败';
+                        errorEl.classList.remove('hidden');
+                    }
+                } catch (err) {
+                    errorEl.textContent = '网络错误，请重试';
+                    errorEl.classList.remove('hidden');
+                }
+                
+                btn.disabled = false;
+                btn.textContent = '登 录';
+            });
+        }
     }
 
     // ==================== Navigation ====================
