@@ -169,26 +169,58 @@ class MusicHubAdmin {
 
     // ==================== NCM ====================
     setupNCM() {
-        // SMS Form
-        document.getElementById('smsForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.loginWithSMS();
-        });
+        console.log('setupNCM called');
         
-        document.getElementById('sendSmsBtn').addEventListener('click', () => {
-            this.sendSMSCode();
-        });
+        // SMS Form
+        const smsForm = document.getElementById('smsForm');
+        if (smsForm) {
+            console.log('smsForm found, attaching submit listener');
+            smsForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                console.log('smsForm submitted, calling loginWithSMS');
+                this.loginWithSMS();
+            });
+        } else {
+            console.error('smsForm NOT FOUND!');
+        }
+        
+        const sendSmsBtn = document.getElementById('sendSmsBtn');
+        if (sendSmsBtn) {
+            console.log('sendSmsBtn found, attaching click listener');
+            sendSmsBtn.addEventListener('click', () => {
+                console.log('sendSmsBtn clicked, calling sendSMSCode');
+                this.sendSMSCode();
+            });
+        } else {
+            console.error('sendSmsBtn NOT FOUND!');
+        }
         
         // QR Form
-        document.getElementById('genQrBtn').addEventListener('click', () => {
-            this.generateQRCode();
-        });
+        const genQrBtn = document.getElementById('genQrBtn');
+        if (genQrBtn) {
+            console.log('genQrBtn found, attaching click listener');
+            genQrBtn.addEventListener('click', () => {
+                console.log('genQrBtn clicked, calling generateQRCode');
+                this.generateQRCode();
+            });
+        } else {
+            console.error('genQrBtn NOT FOUND!');
+        }
         
         // Cookie Form
-        document.getElementById('cookieForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.loginWithCookie();
-        });
+        const cookieForm = document.getElementById('cookieForm');
+        if (cookieForm) {
+            console.log('cookieForm found, attaching submit listener');
+            cookieForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                console.log('cookieForm submitted, calling loginWithCookie');
+                this.loginWithCookie();
+            });
+        } else {
+            console.error('cookieForm NOT FOUND!');
+        }
+        
+        console.log('setupNCM completed');
     }
 
     async loadNCMStatus() {
