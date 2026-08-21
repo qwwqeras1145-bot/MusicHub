@@ -295,29 +295,37 @@ class MusicHubAdmin {
     }
 
     async loginWithSMS() {
+        console.log('loginWithSMS called');
         const phone = document.getElementById('smsPhone').value.trim();
         const captcha = document.getElementById('smsCode').value.trim();
+        console.log('Phone:', phone, 'Captcha:', captcha);
         
         if (!phone || !captcha) {
+            console.log('Validation failed - missing phone or captcha');
             this.showToast('请输入手机号和验证码', 'error');
             return;
         }
         
         try {
+            console.log('Sending login request...');
             const response = await fetch('/api/admin/ncm/phone', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone, captcha })
             });
+            console.log('Response status:', response.status);
             const data = await response.json();
+            console.log('Response data:', data);
             
             if (data.code === 200) {
+                console.log('Login successful');
                 this.showToast('登录成功', 'success');
                 document.getElementById('smsForm').reset();
                 this.loadNCMStatus();
             } else {
                 // Show detailed error message
                 const errorMsg = data.msg || '登录失败';
+                console.log('Login failed:', errorMsg);
                 this.showToast(errorMsg, 'error');
                 
                 // If there are details, log them to console for debugging
@@ -326,6 +334,7 @@ class MusicHubAdmin {
                 }
             }
         } catch (error) {
+            console.error('Exception caught:', error);
             this.showToast('登录失败', 'error');
         }
     }
