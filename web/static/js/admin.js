@@ -316,7 +316,14 @@ class MusicHubAdmin {
                 document.getElementById('smsForm').reset();
                 this.loadNCMStatus();
             } else {
-                this.showToast(data.msg || '登录失败', 'error');
+                // Show detailed error message
+                const errorMsg = data.msg || '登录失败';
+                this.showToast(errorMsg, 'error');
+                
+                // If there are details, log them to console for debugging
+                if (data.details) {
+                    console.error('NCM login error details:', data.details);
+                }
             }
         } catch (error) {
             this.showToast('登录失败', 'error');

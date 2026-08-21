@@ -827,19 +827,27 @@ def ncm_phone_login():
     
     # Try to get meaningful error message
     error_code = result.get("code", -1)
-    error_msg = result.get("msg") or result.get("message") or "登录失败"
+    error_msg = result.get("msg") or result.get("message") or "未知错误"
     
-    # Common error codes
-    if error_code == 503:
-        error_msg = "验证码错误，请重新获取"
-    elif error_code == 502:
-        error_msg = "账号或密码错误"
-    elif error_code == 509:
-        error_msg = "你可能操作过于频繁，请稍后再试"
-    elif error_code == 501:
-        error_msg = "用户不存在"
+    # Common error codes from NetEase API
+    error_map = {
+        503: "验证码错误，请重新获取验证码",
+        502: "手机号或密码错误",
+        509: "操作过于频繁，请稍后再试",
+        501: "用户不存在",
+        505: "该手机号未注册网易云音乐",
+        506: "验证码已过期，请重新获取",
+        510: "该手机号已被封禁",
+    }
     
-    return jsonify({"code": error_code, "msg": f"登录失败: {error_msg}"})
+    if error_code in error_map:
+        error_msg = error_map[error_code]
+    
+    return jsonify({
+        "code": error_code, 
+        "msg": f"登录失败: {error_msg} (错误码: {error_code})",
+        "details": result
+    })
 
 
 @app.route("/api/admin/ncm/sms/send", methods=["POST"])
