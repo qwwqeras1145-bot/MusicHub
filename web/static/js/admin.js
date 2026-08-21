@@ -184,6 +184,19 @@ class MusicHubAdmin {
             console.error('smsForm NOT FOUND!');
         }
         
+        // Add direct click handler to submit button as fallback
+        const loginBtn = smsForm ? smsForm.querySelector('button[type="submit"]') : null;
+        if (loginBtn) {
+            console.log('Login button found, attaching click listener as fallback');
+            loginBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                console.log('Login button clicked directly, calling loginWithSMS');
+                this.loginWithSMS();
+            });
+        } else {
+            console.error('Login button NOT FOUND!');
+        }
+        
         const sendSmsBtn = document.getElementById('sendSmsBtn');
         if (sendSmsBtn) {
             console.log('sendSmsBtn found, attaching click listener');
