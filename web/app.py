@@ -732,14 +732,24 @@ def ncm_phone_login():
                     cookie = f"MUSIC_U={token}"
                     print(f"[NCM Phone Login] Using token field as cookie: {cookie[:50]}...", file=sys.stderr)
         
+        # Last resort: extract from session cookies
+        if not cookie:
+            session_cookies = dict(api.session.cookies)
+            if session_cookies:
+                # Build cookie string from session
+                cookie_parts = []
+                for name, value in session_cookies.items():
+                    cookie_parts.append(f"{name}={value}")
+                cookie = "; ".join(cookie_parts)
+                print(f"[NCM Phone Login] Extracted from session: {cookie[:100]}...", file=sys.stderr)
+        
         # Create new API instance with cookie
         if cookie:
             api = NetEaseAPI(cookie=cookie)
             downloader = Downloader(api)
         else:
-            print(f"[NCM Phone Login] WARNING: No cookie found in login response!", file=sys.stderr)
-            # Still create API with empty cookie to maintain session
-            api = NetEaseAPI()
+            # If no cookie anywhere, the original api instance already has it in session
+            # Just use it as-is
             downloader = Downloader(api)
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
