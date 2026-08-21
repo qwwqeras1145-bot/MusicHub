@@ -547,10 +547,44 @@ def ncm_validate():
     ncm = cfg.get("ncm", {})
     cookie = ncm.get("cookie", "")
     
-    # If no cookie but logged_in is True, something's wrong
+    # If no cookie string but logged_in is True, try to restore from session_cookies
     if not cookie:
         if ncm.get("logged_in"):
-            # Try to use the global API instance which might still have the session
+            # Try to restore from saved session_cookies dict
+            session_cookies = ncm.get("session_cookies", {})
+            if session_cookies:
+                # Restore cookies to the global API instance
+                import sys
+                print(f"[NCM Validate] Restoring session cookies: {list(session_cookies.keys())}", file=sys.stderr)
+                api.session.cookies.clear()
+                for name, value in session_cookies.items():
+                    api.session.cookies.set(name, value, domain='.music.163.com')
+                
+                # Now try to validate with restored cookies
+                try:
+                    status = api.get_login_status()
+                    if status.get("code") == 200 and status.get("profile"):
+                        profile = status["profile"]
+                        ncm["username"] = profile.get("nickname", "未知")
+                        ncm["user_id"] = profile.get("userId", 0)
+                        ncm["vip"] = profile.get("vipType", 0) > 0
+                        ncm["avatar"] = profile.get("avatarUrl", "")
+                        ncm["cookie_expired"] = False
+                        ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        cfg["ncm"] = ncm
+                        save_config(cfg)
+                        return jsonify({
+                            "code": 200, "msg": "Cookie 有效",
+                            "valid": True,
+                            "username": ncm["username"],
+                            "user_id": ncm["user_id"],
+                            "vip": ncm["vip"],
+                            "avatar": ncm["avatar"],
+                        })
+                except Exception as e:
+                    print(f"[NCM Validate] Error after restoring session cookies: {e}", file=sys.stderr)
+            
+            # Try the global API instance as fallback (might still have session)
             try:
                 status = api.get_login_status()
                 if status.get("code") == 200 and status.get("profile"):
@@ -572,7 +606,6 @@ def ncm_validate():
                         "avatar": ncm["avatar"],
                     })
             except Exception as e:
-                import sys
                 print(f"[NCM Validate] Error using global API: {e}", file=sys.stderr)
                 pass
             return jsonify({"code": -1, "msg": "Cookie 数据丢失，请重新登录"})
@@ -635,9 +668,14 @@ def ncm_cookie_login():
         if status.get("code") == 200 and status.get("profile"):
             profile = status["profile"]
             now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            # Save session cookies dict for later restoration
+            session_cookies = dict(api.session.cookies)
+            
             cfg = load_config()
             cfg["ncm"] = {
                 "cookie": cookie,
+                "session_cookies": session_cookies,
                 "logged_in": True,
                 "cookie_expired": False,
                 "username": profile.get("nickname", "未知"),
@@ -732,30 +770,32 @@ def ncm_phone_login():
                     cookie = f"MUSIC_U={token}"
                     print(f"[NCM Phone Login] Using token field as cookie: {cookie[:50]}...", file=sys.stderr)
         
-        # Last resort: extract from session cookies
-        if not cookie:
-            session_cookies = dict(api.session.cookies)
-            if session_cookies:
-                # Build cookie string from session
-                cookie_parts = []
-                for name, value in session_cookies.items():
-                    cookie_parts.append(f"{name}={value}")
-                cookie = "; ".join(cookie_parts)
-                print(f"[NCM Phone Login] Extracted from session: {cookie[:100]}...", file=sys.stderr)
-        
-        # Create new API instance with cookie
-        if cookie:
-            api = NetEaseAPI(cookie=cookie)
-            downloader = Downloader(api)
+        # ALWAYS extract and save the ENTIRE session cookies dict
+        # This is the most reliable method - NCM puts cookies in HTTP headers, not JSON body
+        session_cookies = dict(api.session.cookies)
+        if session_cookies:
+            # Build cookie string from session
+            cookie_parts = []
+            for name, value in session_cookies.items():
+                cookie_parts.append(f"{name}={value}")
+            session_cookie_str = "; ".join(cookie_parts)
+            # Use session cookies if we don't have a better cookie
+            if not cookie:
+                cookie = session_cookie_str
+                print(f"[NCM Phone Login] Using session cookies: {cookie[:100]}...", file=sys.stderr)
         else:
-            # If no cookie anywhere, the original api instance already has it in session
-            # Just use it as-is
-            downloader = Downloader(api)
+            session_cookie_str = ""
+            print(f"[NCM Phone Login] WARNING: No session cookies found!", file=sys.stderr)
+        
+        # DON'T create a new API instance - the current one already has the session cookies
+        # Just create a new downloader with the existing api
+        downloader = Downloader(api)
 
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         cfg = load_config()
         cfg["ncm"] = {
             "cookie": cookie,
+            "session_cookies": session_cookies,  # Save entire session cookies dict
             "logged_in": True,
             "cookie_expired": False,
             "username": profile.get("nickname", "未知"),
@@ -771,7 +811,9 @@ def ncm_phone_login():
         # Verify save was successful
         cfg_check = load_config()
         saved_cookie = cfg_check.get("ncm", {}).get("cookie", "")
-        print(f"[NCM Phone Login] Saved cookie to config: {saved_cookie[:100] if saved_cookie else 'EMPTY'}...", file=sys.stderr)
+        saved_session = cfg_check.get("ncm", {}).get("session_cookies", {})
+        print(f"[NCM Phone Login] Saved cookie string: {saved_cookie[:100] if saved_cookie else 'EMPTY'}...", file=sys.stderr)
+        print(f"[NCM Phone Login] Saved session cookies: {list(saved_session.keys()) if saved_session else 'EMPTY'}", file=sys.stderr)
         
         return jsonify({
             "code": 200,
@@ -878,9 +920,13 @@ def ncm_qr_check():
         validation = _validate_ncm_cookie(cookie)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        # Save session cookies dict for later restoration
+        session_cookies = dict(api.session.cookies)
+
         cfg = load_config()
         cfg["ncm"] = {
             "cookie": cookie,
+            "session_cookies": session_cookies,
             "logged_in": True,
             "cookie_expired": False,
             "username": validation.get("username", "扫码用户"),
