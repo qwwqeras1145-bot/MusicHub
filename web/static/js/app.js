@@ -55,19 +55,35 @@
     }
 
     async function doSearch() {
+        console.log('doSearch called');
         const kw = searchInput.value.trim();
-        if (!kw) return;
+        console.log('Search keyword:', kw);
+        if (!kw) {
+            console.log('Empty keyword, returning');
+            return;
+        }
         $('searchResults').innerHTML = '<div class="loading">搜索中...</div>';
         suggestions.classList.add('hidden');
         try {
-            const r = await fetch(`${API}/api/search?q=${encodeURIComponent(kw)}&limit=50`);
+            const url = `${API}/api/search?q=${encodeURIComponent(kw)}&limit=50`;
+            console.log('Fetching:', url);
+            const r = await fetch(url);
+            console.log('Response status:', r.status);
             const d = await r.json();
+            console.log('Response data:', d);
+            console.log('Code:', d.code, 'Songs:', d.songs?.length);
             if (d.code !== 200 || !d.songs?.length) {
-                $('searchResults').innerHTML = '<div class="empty-state"><p>没有找到相关歌曲</p></div>'; return;
+                console.log('No results or error');
+                $('searchResults').innerHTML = '<div class="empty-state"><p>没有找到相关歌曲</p></div>';
+                return;
             }
+            console.log('Rendering', d.songs.length, 'songs');
             renderSongList(d.songs, $('searchResults'));
             showToast(`找到 ${d.total || d.songs.length} 首`, 'success');
-        } catch { $('searchResults').innerHTML = '<div class="empty-state"><p>搜索失败</p></div>'; }
+        } catch (err) {
+            console.error('Search error:', err);
+            $('searchResults').innerHTML = '<div class="empty-state"><p>搜索失败</p></div>';
+        }
     }
 
     // ==================== Song List ====================
