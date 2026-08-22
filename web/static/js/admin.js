@@ -169,71 +169,62 @@ class MusicHubAdmin {
 
     // ==================== NCM ====================
     setupNCM() {
-        console.log('setupNCM called');
+        // SMS Login Button - direct click, no form submit dependency
+        const smsLoginBtn = document.getElementById('smsLoginBtn');
+        if (smsLoginBtn) {
+            smsLoginBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.loginWithSMS();
+            });
+        }
         
-        // SMS Form
+        // Also handle Enter key on SMS code input
+        const smsCodeInput = document.getElementById('smsCode');
+        if (smsCodeInput) {
+            smsCodeInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    this.loginWithSMS();
+                }
+            });
+        }
+        
+        // Prevent form default submit (page reload)
         const smsForm = document.getElementById('smsForm');
         if (smsForm) {
-            console.log('smsForm found, attaching submit listener');
             smsForm.addEventListener('submit', (e) => {
                 e.preventDefault();
-                console.log('smsForm submitted, calling loginWithSMS');
                 this.loginWithSMS();
             });
-        } else {
-            console.error('smsForm NOT FOUND!');
         }
         
-        // Add direct click handler to submit button as fallback
-        const loginBtn = smsForm ? smsForm.querySelector('button[type="submit"]') : null;
-        if (loginBtn) {
-            console.log('Login button found, attaching click listener as fallback');
-            loginBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                console.log('Login button clicked directly, calling loginWithSMS');
-                this.loginWithSMS();
-            });
-        } else {
-            console.error('Login button NOT FOUND!');
-        }
-        
+        // Send SMS button
         const sendSmsBtn = document.getElementById('sendSmsBtn');
         if (sendSmsBtn) {
-            console.log('sendSmsBtn found, attaching click listener');
-            sendSmsBtn.addEventListener('click', () => {
-                console.log('sendSmsBtn clicked, calling sendSMSCode');
-                this.sendSMSCode();
-            });
-        } else {
-            console.error('sendSmsBtn NOT FOUND!');
+            sendSmsBtn.addEventListener('click', () => this.sendSMSCode());
         }
         
-        // QR Form
+        // QR Code button
         const genQrBtn = document.getElementById('genQrBtn');
         if (genQrBtn) {
-            console.log('genQrBtn found, attaching click listener');
-            genQrBtn.addEventListener('click', () => {
-                console.log('genQrBtn clicked, calling generateQRCode');
-                this.generateQRCode();
-            });
-        } else {
-            console.error('genQrBtn NOT FOUND!');
+            genQrBtn.addEventListener('click', () => this.generateQRCode());
         }
         
         // Cookie Form
-        const cookieForm = document.getElementById('cookieForm');
-        if (cookieForm) {
-            console.log('cookieForm found, attaching submit listener');
-            cookieForm.addEventListener('submit', (e) => {
+        const cookieLoginBtn = document.getElementById('cookieLoginBtn');
+        if (cookieLoginBtn) {
+            cookieLoginBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                console.log('cookieForm submitted, calling loginWithCookie');
                 this.loginWithCookie();
             });
-        } else {
-            console.error('cookieForm NOT FOUND!');
         }
-        
-        console.log('setupNCM completed');
+        const cookieForm = document.getElementById('cookieForm');
+        if (cookieForm) {
+            cookieForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.loginWithCookie();
+            });
+        }
     }
 
     async loadNCMStatus() {
@@ -340,47 +331,66 @@ class MusicHubAdmin {
     }
 
     async loginWithSMS() {
-        console.log('loginWithSMS called');
         const phone = document.getElementById('smsPhone').value.trim();
         const captcha = document.getElementById('smsCode').value.trim();
-        console.log('Phone:', phone, 'Captcha:', captcha);
+        const btn = document.getElementById('smsLoginBtn');
         
         if (!phone || !captcha) {
-            console.log('Validation failed - missing phone or captcha');
             this.showToast('请输入手机号和验证码', 'error');
             return;
         }
         
+        // Prevent double submission
+        if (btn && btn.disabled) return;
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '登录中...';
+        }
+        
         try {
-            console.log('Sending login request...');
             const response = await fetch('/api/admin/ncm/phone', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ phone, captcha })
             });
-            console.log('Response status:', response.status);
+            
+            if (!response.ok) {
+                const errText = await response.text();
+                let errMsg = '登录失败';
+                try {
+                    const errJson = JSON.parse(errText);
+                    errMsg = errJson.msg || errMsg;
+                } catch(e) {}
+                this.showToast(errMsg, 'error');
+                return;
+            }
+            
             const data = await response.json();
-            console.log('Response data:', data);
             
             if (data.code === 200) {
-                console.log('Login successful');
                 this.showToast('登录成功', 'success');
                 document.getElementById('smsForm').reset();
+                // Clear cooldown
+                if (this.smsTimer) {
+                    clearInterval(this.smsTimer);
+                    this.smsCooldown = 0;
+                    const sendBtn = document.getElementById('sendSmsBtn');
+                    if (sendBtn) {
+                        sendBtn.disabled = false;
+                        sendBtn.textContent = '发送验证码';
+                    }
+                }
                 this.loadNCMStatus();
             } else {
-                // Show detailed error message
-                const errorMsg = data.msg || '登录失败';
-                console.log('Login failed:', errorMsg);
-                this.showToast(errorMsg, 'error');
-                
-                // If there are details, log them to console for debugging
-                if (data.details) {
-                    console.error('NCM login error details:', data.details);
-                }
+                this.showToast(data.msg || '登录失败', 'error');
             }
         } catch (error) {
-            console.error('Exception caught:', error);
-            this.showToast('登录失败', 'error');
+            this.showToast('网络错误，请重试', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '登 录';
+            }
         }
     }
 
@@ -451,10 +461,17 @@ class MusicHubAdmin {
 
     async loginWithCookie() {
         const cookie = document.getElementById('cookieInput').value.trim();
+        const btn = document.getElementById('cookieLoginBtn');
         
         if (!cookie) {
             this.showToast('请输入 Cookie', 'error');
             return;
+        }
+        
+        if (btn && btn.disabled) return;
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = '登录中...';
         }
         
         try {
@@ -463,6 +480,12 @@ class MusicHubAdmin {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ cookie })
             });
+            
+            if (!response.ok) {
+                this.showToast('请求失败，请重试', 'error');
+                return;
+            }
+            
             const data = await response.json();
             
             if (data.code === 200) {
@@ -473,7 +496,12 @@ class MusicHubAdmin {
                 this.showToast(data.msg || '登录失败', 'error');
             }
         } catch (error) {
-            this.showToast('登录失败', 'error');
+            this.showToast('网络错误，请重试', 'error');
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = '登录';
+            }
         }
     }
 

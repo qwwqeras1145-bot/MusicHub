@@ -545,74 +545,9 @@ def ncm_validate():
     global api, downloader
     cfg = load_config()
     ncm = cfg.get("ncm", {})
-    cookie = ncm.get("cookie", "")
     
-    # If no cookie string but logged_in is True, try to restore from session_cookies
-    if not cookie:
-        if ncm.get("logged_in"):
-            # Try to restore from saved session_cookies dict
-            session_cookies = ncm.get("session_cookies", {})
-            if session_cookies:
-                # Restore cookies to the global API instance
-                import sys
-                print(f"[NCM Validate] Restoring session cookies: {list(session_cookies.keys())}", file=sys.stderr)
-                api.session.cookies.clear()
-                for name, value in session_cookies.items():
-                    api.session.cookies.set(name, value, domain='.music.163.com')
-                
-                # Now try to validate with restored cookies
-                try:
-                    status = api.get_login_status()
-                    if status.get("code") == 200 and status.get("profile"):
-                        profile = status["profile"]
-                        ncm["username"] = profile.get("nickname", "未知")
-                        ncm["user_id"] = profile.get("userId", 0)
-                        ncm["vip"] = profile.get("vipType", 0) > 0
-                        ncm["avatar"] = profile.get("avatarUrl", "")
-                        ncm["cookie_expired"] = False
-                        ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        cfg["ncm"] = ncm
-                        save_config(cfg)
-                        return jsonify({
-                            "code": 200, "msg": "Cookie 有效",
-                            "valid": True,
-                            "username": ncm["username"],
-                            "user_id": ncm["user_id"],
-                            "vip": ncm["vip"],
-                            "avatar": ncm["avatar"],
-                        })
-                except Exception as e:
-                    print(f"[NCM Validate] Error after restoring session cookies: {e}", file=sys.stderr)
-            
-            # Try the global API instance as fallback (might still have session)
-            try:
-                status = api.get_login_status()
-                if status.get("code") == 200 and status.get("profile"):
-                    profile = status["profile"]
-                    ncm["username"] = profile.get("nickname", "未知")
-                    ncm["user_id"] = profile.get("userId", 0)
-                    ncm["vip"] = profile.get("vipType", 0) > 0
-                    ncm["avatar"] = profile.get("avatarUrl", "")
-                    ncm["cookie_expired"] = False
-                    ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    cfg["ncm"] = ncm
-                    save_config(cfg)
-                    return jsonify({
-                        "code": 200, "msg": "Cookie 有效",
-                        "valid": True,
-                        "username": ncm["username"],
-                        "user_id": ncm["user_id"],
-                        "vip": ncm["vip"],
-                        "avatar": ncm["avatar"],
-                    })
-            except Exception as e:
-                print(f"[NCM Validate] Error using global API: {e}", file=sys.stderr)
-                pass
-            return jsonify({"code": -1, "msg": "Cookie 数据丢失，请重新登录"})
-        return jsonify({"code": -1, "msg": "未登录网易云"})
-    
-    # Use the ACTIVE global api instance (which was set during login)
-    # instead of creating a new one - this preserves session state
+    # Step 1: Try using the active global api instance directly
+    # This is the most reliable - it has real session cookies from login
     try:
         status = api.get_login_status()
         if status.get("code") == 200 and status.get("profile"):
@@ -622,6 +557,7 @@ def ncm_validate():
             ncm["vip"] = profile.get("vipType", 0) > 0
             ncm["avatar"] = profile.get("avatarUrl", "")
             ncm["cookie_expired"] = False
+            ncm["logged_in"] = True
             ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             cfg["ncm"] = ncm
             save_config(cfg)
@@ -633,16 +569,68 @@ def ncm_validate():
                 "vip": ncm["vip"],
                 "avatar": ncm["avatar"],
             })
-        else:
-            ncm["cookie_expired"] = True
-            ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            cfg["ncm"] = ncm
-            save_config(cfg)
-            return jsonify({"code": -1, "msg": "Cookie 已失效，请重新登录", "valid": False})
     except Exception as e:
         import sys
-        print(f"[NCM Validate] Error: {e}", file=sys.stderr)
-        return jsonify({"code": -1, "msg": f"验证出错: {str(e)}", "valid": False})
+        print(f"[NCM Validate] Global API check failed: {e}", file=sys.stderr)
+    
+    # Step 2: Try restoring from saved session_cookies
+    session_cookies = ncm.get("session_cookies", {})
+    if session_cookies:
+        try:
+            api.session.cookies.clear()
+            for name, value in session_cookies.items():
+                api.session.cookies.set(name, value, domain='.music.163.com')
+            status = api.get_login_status()
+            if status.get("code") == 200 and status.get("profile"):
+                profile = status["profile"]
+                ncm["username"] = profile.get("nickname", "未知")
+                ncm["user_id"] = profile.get("userId", 0)
+                ncm["vip"] = profile.get("vipType", 0) > 0
+                ncm["avatar"] = profile.get("avatarUrl", "")
+                ncm["cookie_expired"] = False
+                ncm["logged_in"] = True
+                ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                cfg["ncm"] = ncm
+                save_config(cfg)
+                return jsonify({
+                    "code": 200, "msg": "Cookie 有效",
+                    "valid": True,
+                    "username": ncm["username"],
+                })
+        except Exception as e:
+            import sys
+            print(f"[NCM Validate] Session restore failed: {e}", file=sys.stderr)
+    
+    # Step 3: Try with saved cookie string
+    cookie = ncm.get("cookie", "")
+    if cookie and "MUSIC_U" in cookie:
+        try:
+            test_api = NetEaseAPI(cookie=cookie)
+            status = test_api.get_login_status()
+            if status.get("code") == 200 and status.get("profile"):
+                profile = status["profile"]
+                ncm["username"] = profile.get("nickname", "未知")
+                ncm["user_id"] = profile.get("userId", 0)
+                ncm["vip"] = profile.get("vipType", 0) > 0
+                ncm["avatar"] = profile.get("avatarUrl", "")
+                ncm["cookie_expired"] = False
+                ncm["logged_in"] = True
+                ncm["last_check"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                cfg["ncm"] = ncm
+                save_config(cfg)
+                return jsonify({
+                    "code": 200, "msg": "Cookie 有效",
+                    "valid": True,
+                    "username": ncm["username"],
+                })
+        except Exception as e:
+            import sys
+            print(f"[NCM Validate] Cookie string check failed: {e}", file=sys.stderr)
+    
+    # All methods failed
+    if ncm.get("logged_in"):
+        return jsonify({"code": -1, "msg": "Cookie 已失效，请重新登录", "valid": False})
+    return jsonify({"code": -1, "msg": "未登录网易云"})
 
 @app.route("/api/admin/ncm/cookie", methods=["POST"])
 @require_auth
